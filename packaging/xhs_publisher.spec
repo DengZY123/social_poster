@@ -31,18 +31,24 @@ MAIN_SCRIPT = str(PACKAGING_DIR / "main_packaged.py")
 datas = []
 
 # 添加本地 Playwright Firefox 到打包中
-import os
-firefox_source = "/Users/dzy/Library/Caches/ms-playwright/firefox-1488/firefox/"
-if os.path.exists(firefox_source):
-    print(f"📦 发现本地 Firefox，将打包到应用中: {firefox_source}")
-    if IS_MACOS:
-        # macOS: 将 Firefox 打包到 Frameworks/browsers 目录
-        datas.append((firefox_source, "browsers/firefox"))
-    elif IS_WINDOWS:
-        # Windows: 将 Firefox 打包到 browsers 目录  
-        datas.append((firefox_source, "browsers/firefox"))
+# 使用动态检测获取 Firefox 路径
+import sys
+sys.path.insert(0, str(PACKAGING_DIR))
+from firefox_finder import FirefoxFinder
+
+firefox_finder = FirefoxFinder()
+firefox_path = firefox_finder.find_playwright_firefox()
+
+if firefox_path:
+    firefox_info = firefox_finder.get_firefox_info(firefox_path)
+    if firefox_info['app_dir'] and os.path.exists(firefox_info['app_dir']):
+        print(f"📦 发现本地 Firefox，将打包到应用中: {firefox_info['app_dir']}")
+        # 只打包到 Resources/browsers 目录，避免重复
+        datas.append((firefox_info['app_dir'], "browsers/firefox"))
+    else:
+        print("⚠️ Firefox 应用目录无效，应用将需要手动下载浏览器")
 else:
-    print("⚠️ 未找到本地 Firefox，应用将在首次运行时下载")
+    print("⚠️ 未找到本地 Firefox，应用将需要手动下载浏览器")
 
 # 添加配置文件和资源
 datas.extend([
@@ -65,119 +71,72 @@ gui_resources = PROJECT_ROOT / "gui" / "resources"
 if gui_resources.exists():
     datas.append((str(gui_resources), "gui/resources"))
 
-# ===================== 隐藏导入模块 =====================
+# ===================== 分析配置 =====================
 
+# 排除不必要的大型库
+excludes = [
+    # 测试相关
+    'unittest', 'pytest', 'nose',
+    
+    # 开发工具
+    'pdb', 'doctest', 'pydoc',
+    
+    # 大型科学计算库（如果不需要）
+    'matplotlib', 'scipy', 'sympy',
+    
+    # 网络相关（如果不需要）
+    'http.server', 'xmlrpc',
+    
+    # 数据库相关（如果不需要）
+    'sqlite3', 'dbm',
+    
+    # 其他不必要的模块
+    'tkinter', 'turtle', 'curses',
+    'multiprocessing.dummy',
+]
+
+# 隐藏导入（确保这些模块被包含）
 hiddenimports = [
-    # PyQt6相关
-    "PyQt6.QtCore",
-    "PyQt6.QtGui", 
-    "PyQt6.QtWidgets",
-    "PyQt6.sip",
+    # PyQt6 相关
+    'PyQt6.QtCore',
+    'PyQt6.QtWidgets', 
+    'PyQt6.QtGui',
     
-    # Playwright相关
-    "playwright",
-    "playwright.async_api",
-    "playwright._impl",
-    
-    # 数据处理
-    "pandas",
-    "openpyxl",
-    "xlsxwriter",
-    
-    # 日志系统
-    "loguru",
-    
-    # 数据验证
-    "pydantic",
-    "pydantic.dataclasses",
-    
-    # JSON处理
-    "ujson",
-    
-    # 异步支持
-    "asyncio",
-    "concurrent.futures",
-    
-    # 系统相关
-    "subprocess",
-    "multiprocessing",
-    "threading",
-    
-    # 网络相关
-    "urllib3",
-    "certifi",
+    # Playwright 相关
+    'playwright',
+    'playwright.sync_api',
+    'playwright.async_api',
     
     # 项目模块
-    "core",
-    "core.models",
-    "core.scheduler", 
-    "core.storage",
-    "core.publisher",
-    "core.process_manager",
-    "gui",
-    "gui.main_window",
-    "gui.components",
-    "gui.components.excel_importer",
-    "utils",
-    "utils.excel_importer",
+    'core.models',
+    'core.scheduler',
+    'core.publisher',
+    'core.storage',
+    'gui.main_window',
+    'gui.components',
     
-    # 打包环境模块
-    "packaging.scripts.path_detector",
-    "packaging.app_config",
+    # 打包相关
+    'packaging.app_config',
+    'packaging.scripts.path_detector',
+    
+    # 数据处理
+    'pandas',
+    'openpyxl',
+    'ujson',
+    'loguru',
+    'pydantic',
 ]
 
-# ===================== 排除模块 =====================
-
-excludes = [
-    # 开发工具
-    "pytest",
-    "black",
-    "flake8",
-    "mypy",
-    
-    # 不需要的GUI工具包
-    "tkinter",
-    "matplotlib",
-    
-    # 不需要的数据科学库
-    "numpy.tests",
-    "pandas.tests",
-    "scipy",
-    "sklearn",
-    
-    # 开发服务器
-    "tornado",
-    "flask",
-    "django",
-    
-    # 不需要的网络库
-    "requests_oauthlib",
-    "oauthlib",
-]
-
-# ===================== 路径和钩子 =====================
-
-# 添加项目路径到pathex
-pathex = [
-    str(PROJECT_ROOT),
-    str(PACKAGING_DIR),
-]
-
-# 运行时钩子
-runtime_hooks = []
-
-# ===================== 构建配置 =====================
-
-# 分析阶段
+# 主分析对象
 a = Analysis(
     [MAIN_SCRIPT],
-    pathex=pathex,
+    pathex=[str(PROJECT_ROOT), str(PACKAGING_DIR)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=runtime_hooks,
+    runtime_hooks=[],
     excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

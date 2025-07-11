@@ -202,6 +202,12 @@ class SimpleScheduler(QObject):
     def _execute_task_async(self, task: PublishTask):
         """异步执行任务 - 直接调用版本"""
         try:
+            # 检查是否已有任务在执行中（避免多个浏览器实例）
+            if len(self.executing_tasks) > 0:
+                logger.warning(f"⚠️ 已有 {len(self.executing_tasks)} 个任务在执行，拒绝新任务")
+                self._handle_task_error(task.id, "已有任务在执行中，请等待完成")
+                return
+            
             # 标记任务开始执行
             task.mark_running()
             self.task_storage.update_task(task)
@@ -224,15 +230,34 @@ class SimpleScheduler(QObject):
                     from pathlib import Path
                     is_packaged = getattr(sys, 'frozen', False) or getattr(sys, '_MEIPASS', None) is not None
                     
-                    # 无论是否打包，都让 Playwright 使用默认的 Firefox
-                    logger.info(f"🦊 {'打包' if is_packaged else '开发'}环境 - 使用 Playwright 默认 Firefox")
-                    firefox_path = None  # 不指定路径，让 Playwright 自己管理
+                    if is_packaged:
+                        # 打包环境 - 使用配置的 Firefox 路径
+                        try:
+                            from packaging.app_config import app_config_manager
+                            firefox_config = app_config_manager.get_firefox_launch_config()
+                            firefox_path = firefox_config.get("executable_path")
+                            if firefox_path and Path(firefox_path).exists():
+                                logger.info(f"🦊 打包环境 - 使用内置 Firefox: {firefox_path}")
+                            else:
+                                logger.warning(f"⚠️ 打包环境 - 内置 Firefox 不存在: {firefox_path}")
+                                firefox_path = None
+                                logger.info("🦊 打包环境 - 回退到 Playwright 默认 Firefox")
+                        except Exception as e:
+                            logger.error(f"❌ 获取打包配置失败: {e}")
+                            firefox_path = None
+                            logger.info("🦊 打包环境 - 使用 Playwright 默认 Firefox")
+                    else:
+                        # 开发环境 - 让 Playwright 自动管理
+                        logger.info("🦊 开发环境 - 使用 Playwright 默认 Firefox")
+                    
+                    logger.info(f"🌐 准备启动浏览器，Firefox路径: {firefox_path or 'Playwright默认'}")
                     
                     async with XhsPublisher(
                         headless=self.config.headless_mode,
                         user_data_dir=self.config.firefox_profile_path,
                         executable_path=firefox_path
                     ) as publisher:
+                        logger.info(f"✅ 浏览器启动成功，开始发布内容")
                         result = await publisher.publish_content(
                             title=task.title,
                             content=task.content,
@@ -249,19 +274,23 @@ class SimpleScheduler(QObject):
             
             def run_async_task():
                 try:
+                    logger.info(f"🔄 在新线程中启动异步任务: {task.title}")
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     result = loop.run_until_complete(publish_task())
                     loop.close()
                     
+                    logger.info(f"✅ 任务执行完成: {task.title}")
                     # 成功回调
                     self._handle_task_success(task.id, {"status": "success", "result": result})
                 except Exception as e:
+                    logger.error(f"❌ 任务执行失败: {task.title} - {e}")
                     # 失败回调
                     self._handle_task_error(task.id, str(e))
             
             thread = threading.Thread(target=run_async_task, daemon=True)
             thread.start()
+            logger.info(f"🚀 任务线程已启动: {task.title}")
             
             return  # 直接返回，不再使用process_manager
             
@@ -396,6 +425,11 @@ class SimpleScheduler(QObject):
             return False
         
         try:
+            # 检查是否有任务正在执行中
+            if self.executing_tasks:
+                logger.warning(f"⚠️ 已有任务正在执行中，请等待完成: {list(self.executing_tasks)}")
+                return False
+            
             # 获取任务
             task = self.task_storage.get_task_by_id(task_id)
             if not task:

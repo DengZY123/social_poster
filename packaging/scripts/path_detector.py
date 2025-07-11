@@ -70,6 +70,9 @@ class PathDetector:
                     firefox_path = base_dir.parent / "Frameworks" / "browsers" / "firefox" / "Nightly.app" / "Contents" / "MacOS" / "firefox"
             elif self._platform == "windows":  # Windows
                 firefox_path = base_dir / "browsers" / "firefox" / "firefox.exe"
+                # 如果在_internal目录中，也检查那里
+                if not firefox_path.exists():
+                    firefox_path = base_dir / "_internal" / "browsers" / "firefox" / "firefox.exe"
             
             if firefox_path and firefox_path.exists():
                 firefox_path = str(firefox_path)

@@ -405,6 +405,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "错误", f"任务状态不是等待中，无法立即发布\n当前状态: {self.get_status_text(task.status)}")
             return
         
+        # 检查是否已有任务在执行
+        if self.scheduler.executing_tasks:
+            QMessageBox.warning(self, "提示", f"已有任务正在执行中，请等待完成后再试")
+            return
+        
         # 确认对话框
         reply = QMessageBox.question(
             self, 
@@ -414,17 +419,11 @@ class MainWindow(QMainWindow):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            # 更新任务时间为当前时间
-            task.publish_time = datetime.now()
-            task.updated_time = datetime.now()
-            
-            # 保存任务更改
-            self.scheduler.task_storage.update_task(task)
-            
             # 记录日志
             self.log_widget.add_log(f"🚀 立即发布任务: {task.title}")
             
             # 使用新的立即执行方法（跳过发布间隔检查）
+            # 注意：不修改任务的发布时间，保持原有时间
             if self.scheduler.execute_task_immediately(task_id):
                 self.log_widget.add_log(f"✅ 任务已提交立即执行: {task.title}")
                 # 显示成功提示

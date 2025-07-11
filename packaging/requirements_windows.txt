@@ -1,0 +1,55 @@
+# Windows版本依赖包
+# 核心依赖
+PyQt6>=6.5.0
+playwright>=1.40.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+loguru>=0.7.0
+pydantic>=2.0.0
+ujson>=5.8.0
+
+# 打包工具
+PyInstaller>=6.0.0
+
+# Windows特定依赖
+pywin32>=306
+pywin32-ctypes>=0.2.2
+
+# 数据处理
+numpy>=1.24.0
+python-dateutil>=2.8.0
+
+# 网络请求
+requests>=2.31.0
+urllib3>=2.0.0
+
+# 异步支持
+asyncio-throttle>=1.0.0
+
+# 文件处理
+pathlib2>=2.3.0;python_version<"3.4"
+
+# 系统工具
+psutil>=5.9.0
+
+# 加密相关
+cryptography>=41.0.0
+
+# 时间处理
+pytz>=2023.3
+
+# JSON处理增强
+jsonschema>=4.17.0
+
+# 配置文件处理
+configparser>=5.3.0
+
+# 进程管理
+concurrent-futures>=3.1.1;python_version<"3.2"
+
+# 内存优化
+memory-profiler>=0.61.0
+
+# 调试工具（可选）
+# pdb++>=0.10.3
+# ipdb>=0.13.13 
