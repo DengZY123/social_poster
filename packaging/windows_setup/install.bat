@@ -1,36 +1,36 @@
 @echo off
 chcp 65001 >nul
-title 小红书发布工具 - 浏览器安装助手
+title XHS Publisher - Browser Install Helper
 
 echo ========================================
-echo 小红书发布工具 - 浏览器安装助手
+echo XHS Publisher - Browser Install Helper
 echo ========================================
 echo.
 
-:: 检查是否以管理员身份运行（某些系统可能需要）
+:: Check if running as administrator (some systems may require)
 net session >nul 2>&1
 if %errorLevel% == 0 (
-    echo ✅ 正在以管理员权限运行
+    echo [OK] Running with administrator privileges
 ) else (
-    echo ⚠️  建议以管理员身份运行此脚本
-    echo    右键点击此文件，选择"以管理员身份运行"
+    echo [Warning] Recommend running as administrator
+    echo    Right-click this file and select "Run as administrator"
     echo.
-    choice /C YN /M "是否继续？(Y/N)"
+    choice /C YN /M "Continue? (Y/N)"
     if errorlevel 2 exit
 )
 
-:: 运行PowerShell脚本
+:: Run PowerShell script
 echo.
-echo 🚀 启动安装程序...
+echo [Starting] Launching installer...
 powershell -ExecutionPolicy Bypass -File "%~dp0install_firefox.ps1"
 
-:: 检查PowerShell脚本的退出码
+:: Check PowerShell script exit code
 if %errorLevel% == 0 (
     echo.
-    echo ✅ 安装程序执行完成！
+    echo [OK] Installation completed!
 ) else (
     echo.
-    echo ❌ 安装过程中出现错误，请查看上面的错误信息
+    echo [Error] Installation failed, please check the error messages above
 )
 
 echo.
