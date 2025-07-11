@@ -1,0 +1,66 @@
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+temp/
+*.tmp
+*.bak
+*.swp
+*~
+
+# 配置文件（包含敏感信息）
+accounts.json
+login_state_*.json
+
+# 浏览器配置文件
+firefox_profile/
+
+# 编译和打包相关
+packaging/build/
+packaging/dist/
+packaging/temp/
+
+# 测试文件
+test_*.xlsx
+*.xlsx
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE 相关
+.vscode/
+.idea/
+*.sublime-*
+
+# Claude相关
+.claude/

@@ -1,0 +1,6 @@
+{
+  "type": "playwright",
+  "installed": true,
+  "version": "latest",
+  "notes": "使用Playwright安装的Firefox浏览器"
+}

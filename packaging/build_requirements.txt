@@ -1,0 +1,40 @@
+# 打包专用依赖配置
+# 基于实际虚拟环境版本，确保兼容性
+
+# GUI框架 - Python 3.13兼容
+PyQt6==6.9.1
+PyQt6-Qt6==6.9.1
+PyQt6_sip==13.10.2
+
+# 浏览器自动化 - 实际安装版本
+playwright==1.53.0
+
+# 数据处理 - 实际安装版本
+pandas==2.3.1
+openpyxl==3.1.2
+
+# 日志系统 - 实际安装版本
+loguru==0.7.3
+
+# 数据验证 - 实际安装版本
+pydantic==2.11.7
+pydantic_core==2.33.2
+
+# JSON处理
+ujson==5.10.0
+
+# 打包工具
+PyInstaller>=6.10.0
+
+# 额外的打包依赖
+# PyInstaller的hook支持
+pysocks==1.7.1  # 网络代理支持
+cryptography>=41.0.0  # 加密支持
+requests>=2.31.0  # HTTP请求
+
+# 平台特定依赖（条件安装）
+# macOS: pyobjc-framework-Cocoa>=10.0  
+# Windows: pywin32>=306
+
+# 开发和调试工具（可选）
+# pyinstaller-hooks-contrib>=2023.9  # 额外的hooks

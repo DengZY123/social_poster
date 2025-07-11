@@ -1,0 +1,18 @@
+# GUI框架
+PyQt6==6.9.1
+
+# 浏览器自动化
+playwright==1.41.2
+
+# 数据处理
+pandas==2.3.0
+openpyxl==3.1.2
+
+# 日志
+loguru==0.7.2
+
+# 数据验证
+pydantic==2.7.1
+
+# JSON处理
+ujson==5.10.0

@@ -1,0 +1,11 @@
+{
+  "firefox_profile_path": "firefox_profile",
+  "tasks_file_path": "tasks.json",
+  "log_file_path": "app.log",
+  "check_interval_seconds": 60,
+  "publish_timeout_seconds": 600,
+  "min_publish_interval_minutes": 5,
+  "headless_mode": false,
+  "browser_launch_timeout": 90,
+  "page_load_timeout": 60
+}
