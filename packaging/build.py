@@ -152,14 +152,24 @@ class XhsPublisherBuilder:
         
         print("✅ 资源文件准备完成")
     
-    def run_pyinstaller(self, debug: bool = False):
+    def run_pyinstaller(self, debug: bool = False, console: bool = False):
         """运行PyInstaller"""
         print("🔨 开始PyInstaller构建...")
+        
+        # 如果需要控制台输出，使用特殊的 spec 文件
+        if console:
+            console_spec = self.spec_file.with_name("xhs_publisher_console.spec")
+            if not console_spec.exists():
+                # 创建控制台版本的 spec 文件
+                self._create_console_spec()
+            spec_file = console_spec
+        else:
+            spec_file = self.spec_file
         
         # 构建命令
         cmd = [
             sys.executable, "-m", "PyInstaller",
-            str(self.spec_file),
+            str(spec_file),
             "--clean",
             "--noconfirm",
         ]
@@ -230,6 +240,23 @@ class XhsPublisherBuilder:
             else:
                 print("❌ Linux应用创建失败")
     
+    def _create_console_spec(self):
+        """创建控制台版本的 spec 文件"""
+        print("📝 创建控制台版本的 spec 文件...")
+        
+        # 读取原始 spec 文件
+        original_spec = self.spec_file.read_text()
+        
+        # 修改为控制台版本
+        console_spec = original_spec.replace('console=False,', 'console=True,')
+        console_spec = console_spec.replace('--windows-disable-console', '# --windows-disable-console')
+        
+        # 写入新文件
+        console_spec_file = self.spec_file.with_name("xhs_publisher_console.spec")
+        console_spec_file.write_text(console_spec)
+        
+        print(f"✅ 控制台 spec 文件创建成功: {console_spec_file}")
+    
     def create_installer(self):
         """创建安装包（可选）"""
         print("📦 创建安装包...")
@@ -277,9 +304,11 @@ class XhsPublisherBuilder:
             return total_size / (1024 * 1024)
         return 0.0
     
-    def build(self, debug: bool = False, clean: bool = True):
+    def build(self, debug: bool = False, clean: bool = True, console: bool = False):
         """执行完整构建流程"""
         print("🚀 开始构建小红书发布工具")
+        if console:
+            print("🖥️  构建控制台版本（带调试输出）")
         print("=" * 60)
         
         try:
@@ -298,7 +327,7 @@ class XhsPublisherBuilder:
             self.prepare_resources()
             
             # 5. 运行PyInstaller
-            self.run_pyinstaller(debug=debug)
+            self.run_pyinstaller(debug=debug, console=console)
             
             # 6. 构建后处理
             self.post_build_processing()
@@ -326,6 +355,7 @@ def main():
     parser.add_argument("--debug", action="store_true", help="调试模式")
     parser.add_argument("--no-clean", action="store_true", help="不清理构建目录")
     parser.add_argument("--deps-only", action="store_true", help="仅安装依赖")
+    parser.add_argument("--console", action="store_true", help="构建控制台版本（带调试输出）")
     
     args = parser.parse_args()
     
@@ -346,11 +376,14 @@ def main():
     # 执行构建
     success = builder.build(
         debug=args.debug,
-        clean=not args.no_clean
+        clean=not args.no_clean,
+        console=args.console
     )
     
     if success:
         print("\n🎉 构建成功！")
+        if args.console:
+            print("💡 提示：控制台版本会显示终端窗口，适合调试使用")
         sys.exit(0)
     else:
         print("\n❌ 构建失败！")

@@ -30,9 +30,25 @@ MAIN_SCRIPT = str(PACKAGING_DIR / "main_packaged.py")
 # 项目源代码目录
 datas = []
 
-# 不再打包Firefox浏览器，改为让用户手动下载
-# 这样可以大幅减小应用体积（从1.2GB降至约100MB）
-print("📦 使用轻量级打包方式，浏览器将在首次使用时下载")
+# 添加本地 Playwright Firefox 到打包中
+# 使用动态检测获取 Firefox 路径
+import sys
+sys.path.insert(0, str(PACKAGING_DIR))
+from firefox_finder import FirefoxFinder
+
+firefox_finder = FirefoxFinder()
+firefox_path = firefox_finder.find_playwright_firefox()
+
+if firefox_path:
+    firefox_info = firefox_finder.get_firefox_info(firefox_path)
+    if firefox_info['app_dir'] and os.path.exists(firefox_info['app_dir']):
+        print(f"📦 发现本地 Firefox，将打包到应用中: {firefox_info['app_dir']}")
+        # 只打包到 Resources/browsers 目录，避免重复
+        datas.append((firefox_info['app_dir'], "browsers/firefox"))
+    else:
+        print("⚠️ Firefox 应用目录无效，应用将需要手动下载浏览器")
+else:
+    print("⚠️ 未找到本地 Firefox，应用将需要手动下载浏览器")
 
 # 添加配置文件和资源
 datas.extend([
@@ -98,7 +114,6 @@ hiddenimports = [
     'core.storage',
     'gui.main_window',
     'gui.components',
-    'gui.components.browser_manager',
     
     # 打包相关
     'packaging.app_config',
@@ -146,7 +161,7 @@ if IS_MACOS:
         bootloader_ignore_signals=False,
         strip=False,
         upx=True,
-        console=True,  # 带控制台的应用（用于调试）
+        console=True,  # GUI应用
         disable_windowed_traceback=False,
         target_arch=None,  # 使用当前架构，避免通用二进制问题
         codesign_identity=None,
@@ -207,7 +222,7 @@ elif IS_WINDOWS:
         upx=True,
         upx_exclude=[],
         runtime_tmpdir=None,
-        console=True,  # 带控制台的应用（用于调试）
+        console=True,  # GUI应用
         disable_windowed_traceback=False,
         target_arch=None,
         codesign_identity=None,
@@ -232,7 +247,7 @@ else:
         upx=True,
         upx_exclude=[],
         runtime_tmpdir=None,
-        console=True,  # 带控制台的应用（用于调试）
+        console=True,  # GUI应用
         disable_windowed_traceback=False,
         target_arch=None,
         codesign_identity=None,

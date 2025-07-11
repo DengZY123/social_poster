@@ -1,0 +1,38 @@
+# Windows打包时的.gitignore配置
+# 在Windows上拉代码后，可以使用这个文件来排除不需要的文件
+
+# 排除所有文档
+packaging/*.md
+packaging/README.md
+
+# 排除macOS/Linux相关文件
+packaging/build.sh
+packaging/build_console.sh
+packaging/firefox_portable/mac/
+packaging/xhs_publisher.spec
+packaging/xhs_publisher_console.spec
+
+# 排除开发/测试文件
+packaging/build.py
+packaging/test_packaging.py
+packaging/firefox_finder.py
+packaging/build_nuitka.py
+packaging/scripts/download_firefox.py
+packaging/accounts.json
+
+# 排除临时目录
+packaging/build/
+packaging/dist/
+packaging/temp/
+
+# 保留必需的文件
+!packaging/xhs_publisher_windows.spec
+!packaging/build_windows.bat
+!packaging/build_windows.py
+!packaging/requirements_windows.txt
+!packaging/main_packaged.py
+!packaging/app_config.py
+!packaging/windows_setup/
+!packaging/resources/
+!packaging/scripts/path_detector.py
+!packaging/scripts/__init__.py

@@ -228,6 +228,9 @@ class MainWindow(QMainWindow):
         # 账号管理标签页
         self.setup_account_tab()
         
+        # 设置标签页
+        self.setup_settings_tab()
+        
         # 日志组件（放在底部）
         self.log_widget = LogWidget()
         main_layout.addWidget(self.log_widget)
@@ -260,6 +263,22 @@ class MainWindow(QMainWindow):
         self.account_tab = AccountTab()
         self.connect_account_tab_signals()
         self.tab_widget.addTab(self.account_tab, "👤 账号管理")
+    
+    def setup_settings_tab(self):
+        """设置标签页"""
+        from gui.components.browser_manager import BrowserManager
+        
+        settings_tab = QWidget()
+        self.tab_widget.addTab(settings_tab, "⚙️ 设置")
+        
+        layout = QVBoxLayout(settings_tab)
+        
+        # 浏览器管理
+        self.browser_manager = BrowserManager()
+        layout.addWidget(self.browser_manager)
+        
+        # 其他设置项可以在这里添加
+        layout.addStretch()
     
     def connect_control_panel_signals(self):
         """连接控制面板信号"""

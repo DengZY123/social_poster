@@ -62,26 +62,77 @@ class PathDetector:
             # 打包环境 - 使用内置Firefox
             base_dir = self.get_base_dir()
             
-            if self._platform == "darwin":  # macOS
-                # Firefox在应用包的browsers目录中
-                firefox_path = base_dir / "browsers" / "firefox" / "Nightly.app" / "Contents" / "MacOS" / "firefox"
-                # 如果没找到，尝试旧的路径结构
-                if not firefox_path.exists():
-                    firefox_path = base_dir.parent / "Frameworks" / "browsers" / "firefox" / "Nightly.app" / "Contents" / "MacOS" / "firefox"
-            elif self._platform == "windows":  # Windows
-                firefox_path = base_dir / "browsers" / "firefox" / "firefox.exe"
-                # 如果在_internal目录中，也检查那里
-                if not firefox_path.exists():
-                    firefox_path = base_dir / "_internal" / "browsers" / "firefox" / "firefox.exe"
+            # 定义可能的Firefox路径
+            possible_paths = []
             
-            if firefox_path and firefox_path.exists():
-                firefox_path = str(firefox_path)
-                print(f"✅ 找到内置 Firefox: {firefox_path}")
-            else:
-                firefox_path = None
-                print(f"⚠️ 未找到内置 Firefox，尝试的路径: {firefox_path}")
+            if self._platform == "darwin":  # macOS
+                # 在 macOS 的 .app 包中，PyInstaller 将数据文件放在 Resources 目录
+                # 获取 Resources 目录路径
+                if base_dir.name == "MacOS" and base_dir.parent.name == "Contents":
+                    # 我们在 .app 包内
+                    resources_dir = base_dir.parent / "Resources"
+                else:
+                    resources_dir = base_dir.parent / "Resources"
+                
+                possible_paths.extend([
+                    # PyInstaller 标准位置 - Resources 目录
+                    resources_dir / "browsers" / "firefox" / "Nightly.app" / "Contents" / "MacOS" / "firefox",
+                    resources_dir / "browsers" / "firefox" / "Firefox.app" / "Contents" / "MacOS" / "firefox",
+                    # 旧的位置（兼容性）
+                    base_dir / "browsers" / "firefox" / "Nightly.app" / "Contents" / "MacOS" / "firefox",
+                    base_dir / "browsers" / "firefox" / "Firefox.app" / "Contents" / "MacOS" / "firefox",
+                    # 其他可能的位置
+                    base_dir.parent / "Frameworks" / "browsers" / "firefox" / "Nightly.app" / "Contents" / "MacOS" / "firefox",
+                ])
+            elif self._platform == "windows":  # Windows
+                possible_paths.extend([
+                    base_dir / "browsers" / "firefox" / "firefox.exe",
+                    base_dir / "_internal" / "browsers" / "firefox" / "firefox.exe",
+                    base_dir / "browsers" / "firefox" / "firefox" / "firefox.exe",
+                ])
+            else:  # Linux
+                possible_paths.extend([
+                    base_dir / "browsers" / "firefox" / "firefox",
+                    base_dir / "_internal" / "browsers" / "firefox" / "firefox",
+                    base_dir / "browsers" / "firefox" / "firefox" / "firefox",
+                ])
+            
+            # 尝试每个可能的路径
+            print(f"🔍 在打包环境中查找 Firefox...")
+            print(f"  基础目录: {base_dir}")
+            print(f"  基础目录存在: {base_dir.exists()}")
+            
+            # 打印 Resources 目录信息
+            if base_dir.name == "MacOS" and base_dir.parent.name == "Contents":
+                resources_dir = base_dir.parent / "Resources"
+                print(f"  Resources 目录: {resources_dir}")
+                print(f"  Resources 目录存在: {resources_dir.exists()}")
+                
+                # 列出 Resources 目录内容
+                if resources_dir.exists():
+                    browsers_dir = resources_dir / "browsers"
+                    if browsers_dir.exists():
+                        print(f"  browsers 目录存在: {browsers_dir}")
+                        # 列出 browsers 目录内容
+                        for item in browsers_dir.iterdir():
+                            print(f"    - {item.name}")
+            
+            for path in possible_paths:
+                print(f"  检查路径: {path}")
+                print(f"    存在: {path.exists()}")
+                print(f"    是文件: {path.is_file() if path.exists() else 'N/A'}")
+                if path.exists() and path.is_file():
+                    firefox_path = str(path)
+                    print(f"✅ 找到内置 Firefox: {firefox_path}")
+                    break
+            
+            if not firefox_path:
+                print(f"⚠️ 未找到内置 Firefox")
+                print(f"  基础目录: {base_dir}")
+                print(f"  尝试的路径数: {len(possible_paths)}")
         else:
             # 开发环境 - 让Playwright自动管理
+            print("🔧 开发环境 - Firefox 由 Playwright 自动管理")
             firefox_path = None
         
         self._cache['firefox_path'] = firefox_path

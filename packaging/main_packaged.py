@@ -56,9 +56,8 @@ def main():
         app.setApplicationName("小红书发布工具")
         app.setApplicationVersion("1.0.0")
         
-        # 设置高DPI支持
-        app.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)
-        app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
+        # PyQt6 默认启用高DPI支持，不需要手动设置
+        # 如果需要特定的DPI设置，可以使用环境变量
         
         print("✅ 应用启动完成！")
         

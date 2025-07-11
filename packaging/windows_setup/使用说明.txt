@@ -1,0 +1,53 @@
+小红书发布工具 - Firefox浏览器安装说明
+=====================================
+
+一、安装步骤
+
+1. 双击运行 install.bat 文件
+   - 如果提示需要管理员权限，请右键点击选择"以管理员身份运行"
+
+2. 等待安装完成
+   - 脚本会自动安装必要的组件
+   - 整个过程大约需要3-5分钟
+
+3. 安装成功后
+   - 您会看到"安装完成"的提示
+   - Firefox路径会自动保存到配置文件中
+
+
+二、注意事项
+
+1. 请确保已安装Python
+   - 如未安装，请访问 https://www.python.org/downloads/ 下载安装
+   - 安装时请勾选"Add Python to PATH"
+
+2. 请确保网络连接正常
+   - 安装过程需要下载Firefox浏览器
+   - 如有公司代理，请先配置代理设置
+
+3. 安装位置
+   - Firefox会安装到系统默认位置
+   - 配置文件保存在: %LOCALAPPDATA%\XhsPublisher\
+
+
+三、常见问题
+
+Q: 提示"未找到Python"怎么办？
+A: 请先安装Python，然后重新运行安装脚本
+
+Q: 安装过程中断怎么办？
+A: 可以重新运行install.bat，脚本会自动处理
+
+Q: 如何查看配置文件？
+A: 按Win+R，输入 %LOCALAPPDATA%\XhsPublisher 即可打开配置目录
+
+Q: 需要手动修改Firefox路径怎么办？
+A: 编辑 %LOCALAPPDATA%\XhsPublisher\firefox_path.txt 文件即可
+
+
+四、技术支持
+
+如遇到问题，请联系技术支持并提供以下信息：
+- 错误截图
+- Windows版本
+- Python版本

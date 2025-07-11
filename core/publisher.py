@@ -88,7 +88,63 @@ class XhsPublisher:
                 launch_kwargs["executable_path"] = self.executable_path
                 logger.info(f"🦊 使用指定的Firefox路径: {self.executable_path}")
             
-            self.context = await self.playwright.firefox.launch_persistent_context(**launch_kwargs)
+            # 尝试启动浏览器，包含详细的错误处理
+            try:
+                self.context = await self.playwright.firefox.launch_persistent_context(**launch_kwargs)
+            except Exception as browser_error:
+                error_msg = str(browser_error)
+                
+                # 检查是否是浏览器未安装的错误
+                if "Executable doesn't exist" in error_msg:
+                    logger.error("❌ Firefox 浏览器未找到")
+                    logger.error("📦 解决方案：")
+                    
+                    # 判断是否为打包环境
+                    import sys
+                    is_packaged = getattr(sys, 'frozen', False) or getattr(sys, '_MEIPASS', None) is not None
+                    
+                    if is_packaged:
+                        logger.error("  🏗️ 检测到打包环境，请执行以下步骤：")
+                        logger.error("  1. 打开应用的【设置】页面")
+                        logger.error("  2. 在【浏览器管理】中点击【下载Firefox浏览器】")
+                        logger.error("  3. 等待下载完成后重试")
+                        logger.error("  💡 提示：首次使用需要下载约200MB的浏览器文件")
+                    else:
+                        logger.error("  🔧 开发环境解决方案：")
+                        logger.error("  1. 运行：playwright install firefox")
+                        logger.error("  2. 或在项目根目录运行：python -m playwright install firefox")
+                        
+                elif "Failed to launch" in error_msg:
+                    logger.error("❌ Firefox 启动失败")
+                    logger.error("可能的原因和解决方案：")
+                    logger.error("  • 权限不足 - 请以管理员身份运行")
+                    logger.error("  • 依赖库缺失 - 请重新下载浏览器")
+                    logger.error("  • Firefox 文件损坏 - 请重新下载浏览器")
+                    logger.error("  • 防火墙阻止 - 请检查防火墙设置")
+                    
+                elif "timeout" in error_msg.lower():
+                    logger.error("❌ 浏览器启动超时")
+                    logger.error("解决方案：")
+                    logger.error("  • 系统资源不足 - 请关闭其他程序")
+                    logger.error("  • 网络连接问题 - 请检查网络连接")
+                    logger.error("  • 重启应用程序")
+                    
+                else:
+                    logger.error(f"❌ 浏览器启动错误: {error_msg}")
+                    logger.error("通用解决方案：")
+                    logger.error("  1. 重启应用程序")
+                    logger.error("  2. 重新下载浏览器")
+                    logger.error("  3. 检查系统权限")
+                
+                # 提供统一的错误消息给上层调用者
+                if "Executable doesn't exist" in error_msg:
+                    raise RuntimeError("浏览器未安装：请在设置中下载Firefox浏览器后重试")
+                elif "Failed to launch" in error_msg:
+                    raise RuntimeError("浏览器启动失败：请检查权限和防火墙设置")
+                elif "timeout" in error_msg.lower():
+                    raise RuntimeError("浏览器启动超时：请重启应用或检查系统资源")
+                else:
+                    raise RuntimeError(f"浏览器启动失败：{error_msg}")
             
             # 创建新页面
             self.page = await self.context.new_page()
@@ -102,6 +158,8 @@ class XhsPublisher:
             
         except Exception as e:
             logger.error(f"❌ 启动浏览器失败: {e}")
+            # 确保清理资源
+            await self.close()
             raise
     
     async def close(self):

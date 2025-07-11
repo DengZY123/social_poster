@@ -222,41 +222,107 @@ class SimpleScheduler(QObject):
             
             async def publish_task():
                 try:
-                    # 获取Firefox路径（适配打包环境）
-                    firefox_path = None
-                    
                     # 判断是否为打包环境
                     import sys
-                    from pathlib import Path
                     is_packaged = getattr(sys, 'frozen', False) or getattr(sys, '_MEIPASS', None) is not None
                     
                     if is_packaged:
-                        # 打包环境 - 使用配置的 Firefox 路径
+                        # 打包环境 - 直接使用app_config的配置（已经处理了Firefox检测和fallback）
                         try:
                             from packaging.app_config import app_config_manager
                             firefox_config = app_config_manager.get_firefox_launch_config()
-                            firefox_path = firefox_config.get("executable_path")
-                            if firefox_path and Path(firefox_path).exists():
-                                logger.info(f"🦊 打包环境 - 使用内置 Firefox: {firefox_path}")
-                            else:
-                                logger.warning(f"⚠️ 打包环境 - 内置 Firefox 不存在: {firefox_path}")
-                                firefox_path = None
-                                logger.info("🦊 打包环境 - 回退到 Playwright 默认 Firefox")
-                        except Exception as e:
-                            logger.error(f"❌ 获取打包配置失败: {e}")
-                            firefox_path = None
-                            logger.info("🦊 打包环境 - 使用 Playwright 默认 Firefox")
+                            logger.info("🦊 使用打包环境的Firefox配置")
+                            logger.info(f"🌐 Firefox配置: headless={firefox_config.get('headless', False)}, "
+                                      f"executable_path={firefox_config.get('executable_path', 'Playwright默认')}")
+                        except Exception as config_error:
+                            logger.warning(f"⚠️ 无法加载打包配置，使用默认配置: {config_error}")
+                            firefox_config = {
+                                "user_data_dir": self.config.firefox_profile_path,
+                                "headless": self.config.headless_mode,
+                                "timeout": 90000,
+                                "args": ['--no-sandbox']
+                            }
                     else:
-                        # 开发环境 - 让 Playwright 自动管理
-                        logger.info("🦊 开发环境 - 使用 Playwright 默认 Firefox")
+                        # 开发环境 - 需要检查Firefox是否可用
+                        import os
+                        from pathlib import Path
+                        
+                        # 检查浏览器是否已安装
+                        if sys.platform == "darwin":
+                            custom_path = Path.home() / "Library" / "Application Support" / "XhsPublisher" / "playwright-browsers"
+                            default_path = Path.home() / "Library" / "Caches" / "ms-playwright"
+                        elif sys.platform == "win32":
+                            custom_path = Path.home() / "AppData" / "Local" / "XhsPublisher" / "playwright-browsers"
+                            default_path = Path.home() / "AppData" / "Local" / "ms-playwright"
+                        else:
+                            custom_path = Path.home() / ".cache" / "XhsPublisher" / "playwright-browsers"
+                            default_path = Path.home() / ".cache" / "ms-playwright"
+                        
+                        firefox_found = False
+                        # 优先使用默认路径（如果存在）
+                        if default_path.exists():
+                            # 在macOS下搜索所有可能的Firefox应用
+                            if sys.platform == "darwin":
+                                # 搜索 Nightly.app 和 Firefox.app
+                                firefox_apps = list(default_path.glob("firefox-*/firefox/Nightly.app/Contents/MacOS/firefox"))
+                                if not firefox_apps:
+                                    firefox_apps = list(default_path.glob("firefox-*/firefox/Firefox.app/Contents/MacOS/firefox"))
+                                if firefox_apps:
+                                    firefox_found = True
+                            else:
+                                # Windows和Linux的检测逻辑
+                                firefox_paths = list(default_path.glob("firefox-*/firefox*"))
+                                if firefox_paths:
+                                    firefox_found = True
+                            
+                            if firefox_found:
+                                # 不设置环境变量，让 Playwright 使用默认路径
+                                if 'PLAYWRIGHT_BROWSERS_PATH' in os.environ:
+                                    del os.environ['PLAYWRIGHT_BROWSERS_PATH']
+                                logger.info(f"📁 使用默认浏览器路径: {default_path}")
+                        
+                        # 否则使用自定义路径
+                        if not firefox_found and custom_path.exists():
+                            if sys.platform == "darwin":
+                                # 搜索 Nightly.app 和 Firefox.app
+                                firefox_apps = list(custom_path.glob("firefox-*/firefox/Nightly.app/Contents/MacOS/firefox"))
+                                if not firefox_apps:
+                                    firefox_apps = list(custom_path.glob("firefox-*/firefox/Firefox.app/Contents/MacOS/firefox"))
+                                if firefox_apps:
+                                    firefox_found = True
+                            else:
+                                # Windows和Linux的检测逻辑
+                                firefox_paths = list(custom_path.glob("firefox-*/firefox*"))
+                                if firefox_paths:
+                                    firefox_found = True
+                            
+                            if firefox_found:
+                                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = str(custom_path)
+                                logger.info(f"📁 使用自定义浏览器路径: {custom_path}")
+                        
+                        if not firefox_found:
+                            error_msg = "浏览器未安装：请在设置中下载Firefox浏览器后重试"
+                            logger.error(f"❌ {error_msg}")
+                            raise Exception(error_msg)
+                        
+                        # 开发环境 - 使用简单配置
+                        firefox_config = {
+                            "user_data_dir": self.config.firefox_profile_path,
+                            "headless": self.config.headless_mode,
+                            "timeout": 60000
+                        }
+                        
+                        logger.info(f"🌐 Firefox配置: headless={firefox_config.get('headless', False)}, "
+                                  f"executable_path={firefox_config.get('executable_path', 'Playwright默认')}")
                     
-                    logger.info(f"🌐 准备启动浏览器，Firefox路径: {firefox_path or 'Playwright默认'}")
+                    # 只传递 XhsPublisher 支持的参数
+                    publisher_params = {
+                        'headless': firefox_config.get('headless', False),
+                        'user_data_dir': firefox_config.get('user_data_dir', self.config.firefox_profile_path),
+                        'executable_path': firefox_config.get('executable_path', None)
+                    }
                     
-                    async with XhsPublisher(
-                        headless=self.config.headless_mode,
-                        user_data_dir=self.config.firefox_profile_path,
-                        executable_path=firefox_path
-                    ) as publisher:
+                    async with XhsPublisher(**publisher_params) as publisher:
                         logger.info(f"✅ 浏览器启动成功，开始发布内容")
                         result = await publisher.publish_content(
                             title=task.title,
