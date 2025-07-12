@@ -39,7 +39,7 @@ class SampleTaskCreator:
         """创建示例任务"""
         sample_tasks = []
         
-        # 示例任务1 - 带图片
+        # 示例任务1 - 美食分享
         task1 = PublishTask.create_new(
             title="分享今日美食制作心得",
             content="今天尝试制作了红烧肉，经过3小时的慢炖，肉质软糯香甜。制作过程中有几个小技巧分享给大家：\n\n1. 肉要先焯水去腥\n2. 糖色要炒制得当\n3. 小火慢炖是关键\n\n大家有什么烹饪心得欢迎分享！ #美食制作 #红烧肉 #烹饪技巧",
@@ -49,7 +49,7 @@ class SampleTaskCreator:
         )
         sample_tasks.append(task1)
         
-        # 示例任务2 - 带图片
+        # 示例任务2 - 户外活动
         task2 = PublishTask.create_new(
             title="周末户外徒步记录",
             content="昨天和朋友们一起去爬山，路程虽然有点累，但是山顶的风景真的很美！\n\n路线推荐：\n📍 起点：山脚停车场\n📍 终点：观景台\n⏰ 用时：约3小时\n💪 难度：中等\n\n记得带足够的水和零食，还有防晒用品。下次还要再来！ #户外徒步 #爬山 #周末活动",
@@ -59,11 +59,11 @@ class SampleTaskCreator:
         )
         sample_tasks.append(task2)
         
-        # 示例任务3 - 无图片
+        # 示例任务3 - 读书笔记
         task3 = PublishTask.create_new(
             title="读书笔记：《高效能人士的七个习惯》",
             content="最近在读这本经典的自我管理书籍，其中几个观点很有启发：\n\n📖 主要收获：\n1. 以终为始 - 明确目标很重要\n2. 要事第一 - 区分重要和紧急\n3. 双赢思维 - 合作大于竞争\n\n这些习惯不仅适用于工作，生活中也很实用。推荐给想要提升自己的朋友们！ #读书笔记 #自我提升 #高效能",
-            images=[],
+            images=["images/news1.png"],
             topics=["读书笔记", "自我提升", "高效能"],
             publish_time=datetime.now() + timedelta(days=1)
         )
@@ -228,8 +228,6 @@ class MainWindow(QMainWindow):
         # 账号管理标签页
         self.setup_account_tab()
         
-        # 设置标签页
-        self.setup_settings_tab()
         
         # 日志组件（放在底部）
         self.log_widget = LogWidget()
@@ -264,21 +262,6 @@ class MainWindow(QMainWindow):
         self.connect_account_tab_signals()
         self.tab_widget.addTab(self.account_tab, "👤 账号管理")
     
-    def setup_settings_tab(self):
-        """设置标签页"""
-        from gui.components.browser_manager import BrowserManager
-        
-        settings_tab = QWidget()
-        self.tab_widget.addTab(settings_tab, "⚙️ 设置")
-        
-        layout = QVBoxLayout(settings_tab)
-        
-        # 浏览器管理
-        self.browser_manager = BrowserManager()
-        layout.addWidget(self.browser_manager)
-        
-        # 其他设置项可以在这里添加
-        layout.addStretch()
     
     def connect_control_panel_signals(self):
         """连接控制面板信号"""
@@ -299,6 +282,7 @@ class MainWindow(QMainWindow):
         self.task_detail_table.task_publish_immediately_requested.connect(self.on_publish_immediately)
         self.task_detail_table.tasks_delete_requested.connect(self.batch_delete_tasks)
         self.task_detail_table.task_time_updated.connect(self.on_task_time_updated)
+        self.task_detail_table.task_edit_requested.connect(self.on_edit_task)
     
     def connect_account_tab_signals(self):
         """连接账号管理标签页信号"""
@@ -507,57 +491,125 @@ class MainWindow(QMainWindow):
             logger.error(f"更新任务时间失败: {e}")
             QMessageBox.critical(self, "错误", f"更新任务时间失败: {e}")
     
+    @operation_guard("edit_task", timeout_seconds=30)
+    @safe_method(fallback_result=None, error_message="编辑任务失败")
+    def on_edit_task(self, task_id: str):
+        """编辑任务"""
+        try:
+            # 获取任务
+            task = self.scheduler.get_task_by_id(task_id)
+            if not task:
+                QMessageBox.warning(self, "错误", "找不到指定的任务")
+                return
+            
+            # 检查任务状态
+            if task.status not in [TaskStatus.PENDING, TaskStatus.FAILED]:
+                QMessageBox.warning(self, "错误", "只能编辑等待中或失败的任务")
+                return
+            
+            # 导入编辑对话框
+            from gui.components.task_edit_dialog import TaskEditDialog
+            
+            # 创建并显示编辑对话框
+            dialog = TaskEditDialog(task, self)
+            dialog.task_updated.connect(self.on_task_edited)
+            dialog.exec()
+            
+        except Exception as e:
+            logger.error(f"编辑任务失败: {e}")
+            QMessageBox.critical(self, "错误", f"编辑任务失败: {e}")
+    
+    def on_task_edited(self, task: PublishTask):
+        """任务编辑完成"""
+        try:
+            # 更新任务到存储
+            success = self.scheduler.task_storage.update_task(task)
+            
+            if success:
+                self.log_widget.add_log(f"✏️ 任务已更新: {task.title}")
+                self.refresh_tasks()
+                QMessageBox.information(self, "成功", "任务更新成功")
+            else:
+                QMessageBox.warning(self, "错误", "更新任务失败")
+                
+        except Exception as e:
+            logger.error(f"更新任务失败: {e}")
+            QMessageBox.critical(self, "错误", f"更新任务失败: {e}")
+    
     def on_account_selected(self, account_name: str):
         """账号被选中"""
         self.log_widget.add_log(f"👤 选择账号: {account_name}")
+        self.account_tab.add_log(f"选择账号: {account_name}")
     
     def on_login_requested(self, account_name: str):
-        """请求登录账号"""
+        """请求登录账号（测试账号）"""
         try:
-            self.log_widget.add_log(f"🔑 正在为账号 {account_name} 打开登录页面...")
+            self.log_widget.add_log(f"🔑 正在测试账号 {account_name} 的登录状态...")
             
-            # 直接导入并调用登录助手，避免subprocess在打包环境中的问题
-            import asyncio
+            # 使用 subprocess 运行账号测试器
+            import subprocess
             import threading
             
-            def run_login_helper():
-                """在新线程中运行登录助手"""
+            def run_account_test():
+                """在新线程中运行账号测试"""
                 try:
-                    # 导入登录助手模块
-                    sys.path.insert(0, str(Path(__file__).parent.parent))
-                    from login_helper import open_login_page
+                    # 构建命令
+                    cmd = [
+                        sys.executable,
+                        str(Path(__file__).parent.parent / "core" / "account_tester.py"),
+                        account_name
+                    ]
                     
-                    # 创建新的事件循环
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                    # 运行测试
+                    logger.info(f"执行命令: {' '.join(cmd)}")
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        encoding='utf-8'
+                    )
                     
-                    # 运行登录助手
-                    loop.run_until_complete(open_login_page(account_name))
-                    loop.close()
+                    # 读取输出
+                    stdout, stderr = process.communicate()
                     
-                    logger.info(f"✅ 账号 {account_name} 登录助手完成")
+                    if process.returncode == 0:
+                        self.log_widget.add_log(f"✅ 账号测试完成")
+                        # 在账号标签页中显示结果
+                        self.account_tab.add_log(f"账号测试完成: {account_name}")
+                    else:
+                        self.log_widget.add_log(f"❌ 账号测试失败")
+                        self.account_tab.add_log(f"账号测试失败: {account_name}")
+                        if stderr:
+                            logger.error(f"测试错误: {stderr}")
+                            self.account_tab.add_log(f"测试错误: {stderr}")
+                    
+                    # 显示测试结果
+                    if stdout:
+                        lines = stdout.strip().split('\n')
+                        for line in lines:
+                            if "测试结果:" in line:
+                                self.log_widget.add_log(line.strip())
+                                self.account_tab.add_log(line.strip())
+                            elif line.strip() and not line.startswith("["):  # 过滤日志格式的行
+                                self.account_tab.add_log(line.strip())
                     
                 except Exception as e:
-                    logger.error(f"❌ 登录助手失败: {e}")
-                    # 作为后备方案，使用系统默认浏览器
-                    try:
-                        import webbrowser
-                        webbrowser.open("https://www.xiaohongshu.com")
-                        logger.info("✅ 已用系统默认浏览器打开小红书页面")
-                    except Exception as backup_error:
-                        logger.error(f"❌ 后备方案也失败了: {backup_error}")
+                    logger.error(f"❌ 运行账号测试失败: {e}")
+                    self.log_widget.add_log(f"❌ 运行账号测试失败: {e}")
+                    self.account_tab.add_log(f"运行账号测试失败: {e}")
             
             # 在新线程中运行，避免阻塞GUI
-            thread = threading.Thread(target=run_login_helper, daemon=True)
+            thread = threading.Thread(target=run_account_test, daemon=True)
             thread.start()
             
-            self.log_widget.add_log(f"✅ 登录页面已打开，请在浏览器中完成登录")
-            self.log_widget.add_log(f"📋 操作步骤：1) 等待跳转到小红书 2) 点击登录 3) 完成后关闭浏览器")
+            self.log_widget.add_log(f"📋 正在启动账号测试器，请稍候...")
             
         except Exception as e:
-            logger.error(f"打开登录页面失败: {e}")
-            self.log_widget.add_log(f"❌ 打开登录页面失败: {e}")
-            QMessageBox.critical(self, "错误", f"打开登录页面失败: {e}")
+            logger.error(f"启动账号测试失败: {e}")
+            self.log_widget.add_log(f"❌ 启动账号测试失败: {e}")
+            self.account_tab.add_log(f"启动账号测试失败: {e}")
+            QMessageBox.critical(self, "错误", f"启动账号测试失败: {e}")
     
     def on_tasks_imported(self, tasks: List[PublishTask]):
         """处理Excel导入的任务"""
@@ -706,12 +758,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'scheduler'):
                 self.scheduler.cleanup_resources()
             
-            # 清理账号检查线程
-            if hasattr(self, 'account_tab'):
-                for thread in self.account_tab.check_threads.values():
-                    thread.quit()
-                    thread.wait(1000)  # 最多等待1秒
-                    thread.deleteLater()
+            # 清理账号管理组件
             
             # 清理Excel导入器
             if hasattr(self, 'excel_importer'):

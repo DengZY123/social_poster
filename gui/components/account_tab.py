@@ -42,14 +42,11 @@ class AccountTab(QWidget):
         # 顶部操作按钮区域
         self.create_toolbar(layout)
         
-        # 统计信息区域
-        self.create_stats_area(layout)
-        
         # 账号表格
         self.create_account_table(layout)
         
-        # 底部信息区域
-        self.create_info_area(layout)
+        # 底部执行日志
+        self.create_log_area(layout)
     
     def create_toolbar(self, parent_layout):
         """创建顶部工具栏"""
@@ -74,25 +71,6 @@ class AccountTab(QWidget):
         """)
         toolbar_layout.addWidget(self.add_btn)
         
-        # 批量测试账号按钮
-        self.batch_test_btn = QPushButton("批量测试账号")
-        self.batch_test_btn.clicked.connect(self.batch_test_accounts)
-        self.batch_test_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #17a2b8;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #138496;
-            }
-        """)
-        toolbar_layout.addWidget(self.batch_test_btn)
-        
         # 刷新列表按钮
         self.refresh_btn = QPushButton("刷新列表")
         self.refresh_btn.clicked.connect(self.refresh_accounts)
@@ -115,33 +93,26 @@ class AccountTab(QWidget):
         toolbar_layout.addStretch()
         parent_layout.addLayout(toolbar_layout)
     
-    def create_stats_area(self, parent_layout):
-        """创建统计信息区域"""
-        stats_layout = QHBoxLayout()
-        
-        # 统计标签
-        self.stats_label = QLabel("总账号: 0  有效: 0  失效: 0")
-        self.stats_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: #495057;
-                padding: 8px;
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-            }
-        """)
-        stats_layout.addWidget(self.stats_label)
-        
-        stats_layout.addStretch()
-        parent_layout.addLayout(stats_layout)
-    
     def create_account_table(self, parent_layout):
         """创建账号表格"""
         # 表格
         self.account_table = QTableWidget()
         self.setup_table()
         parent_layout.addWidget(self.account_table)
+    
+    def create_log_area(self, parent_layout):
+        """创建执行日志区域"""
+        # 执行日志
+        log_group = QGroupBox("执行日志")
+        log_group_layout = QVBoxLayout(log_group)
+        
+        self.operation_log = QTextEdit()
+        self.operation_log.setPlaceholderText("账号相关操作日志将在这里显示...")
+        self.operation_log.setReadOnly(True)
+        self.operation_log.setFont(QFont("Monaco", 10))  # 使用 Monaco 等宽字体
+        log_group_layout.addWidget(self.operation_log)
+        
+        parent_layout.addWidget(log_group)
     
     def setup_table(self):
         """设置表格"""
@@ -170,36 +141,6 @@ class AccountTab(QWidget):
         # 连接选择变化信号
         self.account_table.itemSelectionChanged.connect(self.on_selection_changed)
     
-    def create_info_area(self, parent_layout):
-        """创建底部信息区域"""
-        info_layout = QHBoxLayout()
-        
-        # 左侧：账号信息
-        info_group = QGroupBox("账号信息")
-        info_group_layout = QVBoxLayout(info_group)
-        
-        self.account_info = QTextEdit()
-        self.account_info.setPlaceholderText("选择账号查看详细信息...")
-        self.account_info.setMaximumHeight(120)
-        self.account_info.setReadOnly(True)
-        info_group_layout.addWidget(self.account_info)
-        
-        info_layout.addWidget(info_group, 1)
-        
-        # 右侧：操作日志
-        log_group = QGroupBox("操作日志")
-        log_group_layout = QVBoxLayout(log_group)
-        
-        self.operation_log = QTextEdit()
-        self.operation_log.setPlaceholderText("账号操作日志将在这里显示...")
-        self.operation_log.setMaximumHeight(120)
-        self.operation_log.setReadOnly(True)
-        log_group_layout.addWidget(self.operation_log)
-        
-        info_layout.addWidget(log_group, 1)
-        
-        parent_layout.addLayout(info_layout)
-    
     def load_accounts(self):
         """加载账号列表"""
         try:
@@ -224,7 +165,7 @@ class AccountTab(QWidget):
                 self.save_accounts()
             
             self.update_table()
-            self.update_stats()
+            self.add_log("账号列表加载完成")
             
         except Exception as e:
             logger.error(f"加载账号失败: {e}")
@@ -240,7 +181,7 @@ class AccountTab(QWidget):
                 }
             ]
             self.update_table()
-            self.update_stats()
+            self.add_log("创建默认账号")
     
     def save_accounts(self):
         """保存账号列表"""
@@ -250,6 +191,18 @@ class AccountTab(QWidget):
                 json.dump({"accounts": self.accounts}, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"保存账号失败: {e}")
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     def update_table(self):
         """更新表格显示"""
@@ -373,14 +326,6 @@ class AccountTab(QWidget):
         test_btn.clicked.connect(lambda: self.test_account(account))
         self.account_table.setCellWidget(row, 6, test_btn)
     
-    def update_stats(self):
-        """更新统计信息"""
-        total = len(self.accounts)
-        valid = len([acc for acc in self.accounts if '有效' in acc.get('status', '')])
-        invalid = len([acc for acc in self.accounts if '失效' in acc.get('status', '') or '失败' in acc.get('status', '')])
-        
-        self.stats_label.setText(f"总账号: {total}  有效: {valid}  失效: {invalid}")
-    
     def add_account(self):
         """添加账号"""
         from PyQt6.QtWidgets import QDialog, QDialogButtonBox
@@ -439,14 +384,14 @@ class AccountTab(QWidget):
             self.accounts.append(new_account)
             self.save_accounts()
             self.update_table()
-            self.update_stats()
             
-            self.operation_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 添加账号: {account_name}")
+            self.add_log(f"添加账号: {account_name}")
             
             QMessageBox.information(self, "成功", f"账号 '{account_name}' 添加成功")
     
     def edit_account(self, account: dict):
         """编辑账号"""
+        self.add_log(f"编辑账号功能待实现: {account['name']}")
         QMessageBox.information(self, "提示", f"编辑账号功能待实现\n账号: {account['name']}")
     
     def delete_account(self, account: dict):
@@ -466,26 +411,21 @@ class AccountTab(QWidget):
             self.accounts = [acc for acc in self.accounts if acc['name'] != account['name']]
             self.save_accounts()
             self.update_table()
-            self.update_stats()
             
-            self.operation_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 删除账号: {account['name']}")
+            self.add_log(f"删除账号: {account['name']}")
             
             QMessageBox.information(self, "成功", f"账号 '{account['name']}' 已删除")
     
     def test_account(self, account: dict):
-        """测试账号（打开登录页面）"""
-        logger.info(f"🔐 测试账号: {account['name']}")
-        self.operation_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 测试账号: {account['name']}")
+        """测试账号登录状态"""
+        logger.info(f"🔐 测试账号登录状态: {account['name']}")
+        self.add_log(f"测试账号登录状态: {account['name']}")
         self.login_requested.emit(account['name'])
-    
-    def batch_test_accounts(self):
-        """批量测试账号"""
-        QMessageBox.information(self, "提示", "批量测试功能待实现")
     
     def refresh_accounts(self):
         """刷新账号列表"""
         self.load_accounts()
-        self.operation_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 刷新账号列表")
+        self.add_log("刷新账号列表")
     
     def on_selection_changed(self):
         """选择变化处理"""
@@ -493,16 +433,6 @@ class AccountTab(QWidget):
         if current_row >= 0 and current_row < len(self.accounts):
             account = self.accounts[current_row]
             self.current_account = account['name']
-            
-            # 更新账号信息显示
-            info_text = f"""账号名称: {account['name']}
-平台: {account['platform']}
-状态: {account.get('status', '未测试')}
-最后登录: {account.get('last_login', '未登录')}
-备注: {account.get('notes', '')}
-创建时间: {account.get('created_time', '')}"""
-            
-            self.account_info.setText(info_text)
             
             # 发出信号
             self.account_selected.emit(account['name'])
@@ -518,3 +448,18 @@ class AccountTab(QWidget):
         
         account = next((acc for acc in self.accounts if acc['name'] == self.current_account), None)
         return account['platform'] if account else "小红书"
+    
+    def add_log(self, message: str):
+        """添加日志信息"""
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        self.operation_log.append(f"[{timestamp}] {message}")
+        
+        # 自动滚动到底部
+        cursor = self.operation_log.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.operation_log.setTextCursor(cursor)
+    
+    def clear_log(self):
+        """清空日志"""
+        self.operation_log.clear()
+        self.add_log("日志已清空")

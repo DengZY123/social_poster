@@ -153,16 +153,23 @@ class ExcelImporter:
                 image_paths = image_str.split(sep)
                 break
         
-        # 清理路径并检查存在性
+        # 清理路径
         valid_paths = []
         for path in image_paths:
             path = path.strip()
             if path:
-                # 检查文件是否存在
-                if Path(path).exists():
-                    valid_paths.append(str(Path(path).absolute()))
+                # 判断是否为URL
+                if path.startswith(('http://', 'https://')):
+                    # URL直接添加
+                    valid_paths.append(path)
+                    logger.debug(f"添加图片URL: {path}")
                 else:
-                    logger.warning(f"图片文件不存在: {path}")
+                    # 本地文件检查是否存在
+                    if Path(path).exists():
+                        valid_paths.append(str(Path(path).absolute()))
+                        logger.debug(f"添加本地图片: {path}")
+                    else:
+                        logger.warning(f"本地图片文件不存在: {path}")
         
         return valid_paths
     
@@ -259,9 +266,9 @@ class ExcelImporter:
                     "海边度假的美好时光～\n蓝天白云，海浪拍岸，心情格外舒畅！\n#旅行 #海边度假 #美好时光"
                 ],
                 "图片路径": [
-                    "/path/to/food1.jpg,/path/to/food2.jpg",
-                    "/path/to/organize1.jpg",
-                    "/path/to/beach1.jpg,/path/to/beach2.jpg,/path/to/beach3.jpg"
+                    "images/news1.png",
+                    "images/news1.png",
+                    "images/news1.png"
                 ],
                 "发布时间": [
                     "2024-12-25 09:00",

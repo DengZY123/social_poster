@@ -30,6 +30,7 @@ class TaskDetailTable(QWidget):
     task_publish_immediately_requested = pyqtSignal(str)  # 请求立即发布任务 (task_id)
     tasks_delete_requested = pyqtSignal(list)  # 请求批量删除任务 (task_ids)
     task_time_updated = pyqtSignal(str, datetime)  # 任务时间更新 (task_id, new_time)
+    task_edit_requested = pyqtSignal(str)  # 请求编辑任务 (task_id)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -240,10 +241,29 @@ class TaskDetailTable(QWidget):
                     content = content[:50] + "..."
                 self.table.setItem(row, 2, QTableWidgetItem(content))
                 
-                # 图片地址 - 显示数量
-                image_count = len(task.images) if task.images else 0
-                image_text = f"{image_count}张图片" if image_count > 0 else "无图片"
-                self.table.setItem(row, 3, QTableWidgetItem(image_text))
+                # 图片地址 - 显示路径
+                if task.images and len(task.images) > 0:
+                    # 显示第一张图片路径，如果有多张则添加数量
+                    first_image = task.images[0]
+                    # 如果路径太长，显示简化版本
+                    if len(first_image) > 30:
+                        # 显示开头和结尾
+                        display_path = f"{first_image[:15]}...{first_image[-12:]}"
+                    else:
+                        display_path = first_image
+                    
+                    if len(task.images) > 1:
+                        image_text = f"{display_path} (+{len(task.images)-1})"
+                    else:
+                        image_text = display_path
+                else:
+                    image_text = "无图片"
+                
+                image_item = QTableWidgetItem(image_text)
+                # 如果有图片，设置完整路径作为工具提示
+                if task.images:
+                    image_item.setToolTip("\n".join(task.images))
+                self.table.setItem(row, 3, image_item)
                 
                 # 平台
                 self.table.setItem(row, 4, QTableWidgetItem("小红书"))
@@ -297,6 +317,25 @@ class TaskDetailTable(QWidget):
                 }
             """)
             layout.addWidget(publish_btn)
+        
+        # 编辑按钮（仅等待中和失败的任务可以编辑）
+        if task.status in [TaskStatus.PENDING, TaskStatus.FAILED]:
+            edit_btn = QPushButton("编辑")
+            edit_btn.clicked.connect(lambda checked, tid=task.id: self.on_edit_task(tid))
+            edit_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    padding: 4px 8px;
+                    border-radius: 2px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #0056b3;
+                }
+            """)
+            layout.addWidget(edit_btn)
         
         # 重试按钮（仅失败任务显示）
         if task.status == TaskStatus.FAILED and task.can_retry():
@@ -377,6 +416,12 @@ class TaskDetailTable(QWidget):
         view_action.triggered.connect(lambda: self.show_task_details(task))
         menu.addAction(view_action)
         
+        # 编辑任务（仅等待中和失败的任务）
+        if task.status in [TaskStatus.PENDING, TaskStatus.FAILED]:
+            edit_action = QAction("编辑任务", self)
+            edit_action.triggered.connect(lambda: self.on_edit_task(task.id))
+            menu.addAction(edit_action)
+        
         # 删除任务
         delete_action = QAction("删除任务", self)
         delete_action.triggered.connect(lambda: self.on_delete_task(task.id))
@@ -392,6 +437,15 @@ class TaskDetailTable(QWidget):
     
     def show_task_details(self, task: PublishTask):
         """显示任务详情"""
+        # 准备图片信息
+        images_info = ""
+        if task.images:
+            images_info = "\n图片路径：\n"
+            for i, img in enumerate(task.images, 1):
+                images_info += f"  {i}. {img}\n"
+        else:
+            images_info = "\n图片：无"
+        
         details = f"""
 任务详情：
 
@@ -399,9 +453,7 @@ class TaskDetailTable(QWidget):
 
 内容：
 {task.content}
-
-图片：{len(task.images)}张
-{chr(10).join(task.images) if task.images else "无图片"}
+{images_info}
 
 话题：{', '.join(task.topics) if task.topics else "无话题"}
 
@@ -470,6 +522,11 @@ class TaskDetailTable(QWidget):
         """立即发布任务"""
         logger.info(f"🚀 TaskDetailTable: 请求立即发布任务 {task_id}")
         self.task_publish_immediately_requested.emit(task_id)
+    
+    def on_edit_task(self, task_id: str):
+        """编辑任务"""
+        logger.info(f"✏️ TaskDetailTable: 请求编辑任务 {task_id}")
+        self.task_edit_requested.emit(task_id)
     
     def on_batch_delete(self):
         """批量删除"""
