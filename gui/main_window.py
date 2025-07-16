@@ -562,13 +562,35 @@ class MainWindow(QMainWindow):
                     
                     # 运行测试
                     logger.info(f"执行命令: {' '.join(cmd)}")
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        encoding='utf-8'
-                    )
+                    
+                    # 设置环境变量确保子进程使用UTF-8输出，解决Windows编码问题
+                    import os
+                    import platform
+                    env = os.environ.copy()
+                    env['PYTHONIOENCODING'] = 'utf-8'
+                    
+                    # 根据系统选择合适的编码策略
+                    if platform.system() == "Windows":
+                        # Windows系统使用错误处理，避免编码问题
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            encoding='utf-8',
+                            errors='replace',  # 用?替换无法解码的字符
+                            env=env
+                        )
+                    else:
+                        # 其他系统正常使用UTF-8
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            encoding='utf-8',
+                            env=env
+                        )
                     
                     # 读取输出
                     stdout, stderr = process.communicate()
