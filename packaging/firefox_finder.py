@@ -22,7 +22,7 @@ class FirefoxFinder:
         
     def find_playwright_firefox(self) -> Optional[str]:
         """查找 Playwright Firefox 浏览器"""
-        print("🔍 正在查找 Playwright Firefox...")
+        print("[检测] 正在查找 Playwright Firefox...")
         
         # 获取所有可能的 Firefox 路径
         firefox_paths = self._get_all_firefox_paths()

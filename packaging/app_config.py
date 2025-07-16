@@ -172,8 +172,8 @@ class PackagedAppConfig:
             # macOS - 使用写死的路径
             firefox_path = Path("/Users/dzy/Library/Caches/ms-playwright/firefox-1488/firefox/Nightly.app/Contents/MacOS/firefox")
             
-            print(f"🔍 检查写死的Firefox路径: {firefox_path}")
-            print(f"🔍 路径存在: {firefox_path.exists()}")
+            print(f"[检测] 检查写死的Firefox路径: {firefox_path}")
+            print(f"[检测] 路径存在: {firefox_path.exists()}")
             
             if firefox_path.exists():
                 firefox_found = True
@@ -194,7 +194,7 @@ class PackagedAppConfig:
                 ]
                 
                 for path in possible_paths:
-                    print(f"🔍 尝试路径: {path}")
+                    print(f"[检测] 尝试路径: {path}")
                     if path.exists():
                         firefox_found = True
                         firefox_executable = str(path)
@@ -333,7 +333,7 @@ class PackagedAppConfig:
     
     def show_environment_info(self):
         """显示环境信息（调试用）"""
-        print("🔍 应用环境信息")
+        print("[检测] 应用环境信息")
         print("=" * 50)
         
         env_info = self.path_detector.get_environment_info()

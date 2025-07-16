@@ -161,7 +161,7 @@ def main():
         show_startup_info()
         
         # 检查依赖
-        logger.info("🔍 检查运行环境...")
+        logger.info("[检测] 检查运行环境...")
         if not check_dependencies():
             return 1
         

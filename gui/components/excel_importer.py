@@ -275,7 +275,7 @@ class ExcelImportWidget(QWidget):
         # 操作按钮区域
         btn_layout = QHBoxLayout()
         
-        self.validate_btn = QPushButton("🔍 验证文件")
+        self.validate_btn = QPushButton("[检测] 验证文件")
         self.validate_btn.setEnabled(False)
         self.validate_btn.setStyleSheet("""
             QPushButton {
@@ -444,7 +444,7 @@ class ExcelImportWidget(QWidget):
             QMessageBox.warning(self, "警告", "请先选择Excel文件！")
             return
         
-        self.append_status("🔍 开始验证文件...")
+        self.append_status("[检测] 开始验证文件...")
         self.async_importer.validate_file_async(self.selected_file)
     
     def import_tasks(self):

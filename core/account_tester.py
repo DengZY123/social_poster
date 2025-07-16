@@ -28,7 +28,7 @@ class AccountTester:
         返回: (是否成功, 状态信息)
         """
         try:
-            logger.info(f"🔍 开始测试账号: {self.account_name}")
+            logger.info(f"[检测] 开始测试账号: {self.account_name}")
             
             # 启动浏览器
             await self._setup_browser()
@@ -318,7 +318,7 @@ class AccountTester:
                 for path_str in common_paths:
                     path = Path(path_str).expanduser()
                     if path.exists():
-                        logger.info(f"🔍 找到系统 Firefox: {path}")
+                        logger.info(f"[检测] 找到系统 Firefox: {path}")
                         return str(path)
             
             return None

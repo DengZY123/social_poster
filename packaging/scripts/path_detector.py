@@ -98,7 +98,7 @@ class PathDetector:
                 ])
             
             # 尝试每个可能的路径
-            print(f"🔍 在打包环境中查找 Firefox...")
+            print(f"[检测] 在打包环境中查找 Firefox...")
             print(f"  基础目录: {base_dir}")
             print(f"  基础目录存在: {base_dir.exists()}")
             
@@ -312,7 +312,7 @@ def get_app_paths() -> Dict[str, str]:
 
 def main():
     """测试路径检测器"""
-    print("🔍 路径检测器测试")
+    print("[检测] 路径检测器测试")
     print("=" * 50)
     
     detector = PathDetector()

@@ -181,7 +181,7 @@ class XhsPublisher:
     async def check_login_status(self) -> bool:
         """检查登录状态"""
         try:
-            logger.info("🔍 检查登录状态...")
+            logger.info("[检测] 检查登录状态...")
             
             # 使用你提供的登录链接来检测
             login_test_url = "https://creator.xiaohongshu.com/login?source=&redirectReason=401&lastUrl=%2Fpublish%2Fpublish%3Ffrom%3Dtab_switch"
@@ -323,7 +323,7 @@ class XhsPublisher:
             
             for selector in tab_selectors:
                 try:
-                    logger.info(f"🔍 尝试选择器: {selector}")
+                    logger.info(f"[检测] 尝试选择器: {selector}")
                     
                     # 对于XPath选择器，使用不同的等待方法
                     if selector.startswith('/'):
