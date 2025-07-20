@@ -48,6 +48,7 @@ firefox_profile/
 packaging/build/
 packaging/dist/
 packaging/temp/
+packaging/test_release_v1.0/
 
 # 测试文件
 test_*.xlsx
