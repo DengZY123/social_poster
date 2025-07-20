@@ -39,11 +39,18 @@ class SampleTaskCreator:
         """创建示例任务"""
         sample_tasks = []
         
+        # 获取项目根目录下的图片路径
+        project_root = Path(__file__).parent.parent
+        sample_image = project_root / "images" / "news1.png"
+        
+        # 使用绝对路径
+        image_path = str(sample_image.absolute()) if sample_image.exists() else ""
+        
         # 示例任务1 - 美食分享
         task1 = PublishTask.create_new(
             title="分享今日美食制作心得",
             content="今天尝试制作了红烧肉，经过3小时的慢炖，肉质软糯香甜。制作过程中有几个小技巧分享给大家：\n\n1. 肉要先焯水去腥\n2. 糖色要炒制得当\n3. 小火慢炖是关键\n\n大家有什么烹饪心得欢迎分享！ #美食制作 #红烧肉 #烹饪技巧",
-            images=["images/news1.png"],
+            images=[image_path] if image_path else [],
             topics=["美食制作", "红烧肉", "烹饪技巧"],
             publish_time=datetime.now() + timedelta(minutes=10)
         )
@@ -53,7 +60,7 @@ class SampleTaskCreator:
         task2 = PublishTask.create_new(
             title="周末户外徒步记录",
             content="昨天和朋友们一起去爬山，路程虽然有点累，但是山顶的风景真的很美！\n\n路线推荐：\n📍 起点：山脚停车场\n📍 终点：观景台\n⏰ 用时：约3小时\n💪 难度：中等\n\n记得带足够的水和零食，还有防晒用品。下次还要再来！ #户外徒步 #爬山 #周末活动",
-            images=["images/news1.png"],
+            images=[image_path] if image_path else [],
             topics=["户外徒步", "爬山", "周末活动"],
             publish_time=datetime.now() + timedelta(hours=2)
         )
@@ -63,7 +70,7 @@ class SampleTaskCreator:
         task3 = PublishTask.create_new(
             title="读书笔记：《高效能人士的七个习惯》",
             content="最近在读这本经典的自我管理书籍，其中几个观点很有启发：\n\n📖 主要收获：\n1. 以终为始 - 明确目标很重要\n2. 要事第一 - 区分重要和紧急\n3. 双赢思维 - 合作大于竞争\n\n这些习惯不仅适用于工作，生活中也很实用。推荐给想要提升自己的朋友们！ #读书笔记 #自我提升 #高效能",
-            images=["images/news1.png"],
+            images=[image_path] if image_path else [],
             topics=["读书笔记", "自我提升", "高效能"],
             publish_time=datetime.now() + timedelta(days=1)
         )
@@ -540,95 +547,45 @@ class MainWindow(QMainWindow):
         """账号被选中"""
         self.log_widget.add_log(f"👤 选择账号: {account_name}")
         self.account_tab.add_log(f"选择账号: {account_name}")
+
     
+
     def on_login_requested(self, account_name: str):
         """请求登录账号（测试账号）"""
+        import threading  # 保证线程模块已导入
         try:
             self.log_widget.add_log(f"🔑 正在测试账号 {account_name} 的登录状态...")
-            
-            # 使用 subprocess 运行账号测试器
-            import subprocess
-            import threading
-            
             def run_account_test():
-                """在新线程中运行账号测试"""
                 try:
-                    # 构建命令
-                    cmd = [
-                        sys.executable,
-                        str(Path(__file__).parent.parent / "core" / "account_tester.py"),
-                        account_name
-                    ]
-                    
-                    # 运行测试
-                    logger.info(f"执行命令: {' '.join(cmd)}")
-                    
-                    # 设置环境变量确保子进程使用UTF-8输出，解决Windows编码问题
-                    import os
-                    import platform
-                    env = os.environ.copy()
-                    env['PYTHONIOENCODING'] = 'utf-8'
-                    
-                    # 根据系统选择合适的编码策略
-                    if platform.system() == "Windows":
-                        # Windows系统使用错误处理，避免编码问题
-                        process = subprocess.Popen(
-                            cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True,
-                            encoding='utf-8',
-                            errors='replace',  # 用?替换无法解码的字符
-                            env=env
-                        )
-                    else:
-                        # 其他系统正常使用UTF-8
-                        process = subprocess.Popen(
-                            cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True,
-                            encoding='utf-8',
-                            env=env
-                        )
-                    
-                    # 读取输出
-                    stdout, stderr = process.communicate()
-                    
-                    if process.returncode == 0:
+                    import asyncio
+                    from core.account_tester import AccountTester
+                    tester = AccountTester(account_name, headless=False)
+                    success, status = asyncio.run(tester.test_account())
+                    if success:
                         self.log_widget.add_log(f"✅ 账号测试完成")
-                        # 在账号标签页中显示结果
                         self.account_tab.add_log(f"账号测试完成: {account_name}")
                     else:
                         self.log_widget.add_log(f"❌ 账号测试失败")
                         self.account_tab.add_log(f"账号测试失败: {account_name}")
-                        if stderr:
-                            logger.error(f"测试错误: {stderr}")
-                            self.account_tab.add_log(f"测试错误: {stderr}")
-                    
-                    # 显示测试结果
-                    if stdout:
-                        lines = stdout.strip().split('\n')
-                        for line in lines:
+                        self.account_tab.add_log(f"测试错误: {status}")
+                    if status:
+                        for line in status.strip().split('\n'):
                             if "测试结果:" in line:
                                 self.log_widget.add_log(line.strip())
                                 self.account_tab.add_log(line.strip())
-                            elif line.strip() and not line.startswith("["):  # 过滤日志格式的行
+                            elif line.strip() and not line.startswith("["):
                                 self.account_tab.add_log(line.strip())
-                    
                 except Exception as e:
-                    logger.error(f"❌ 运行账号测试失败: {e}")
+                    import traceback
+                    logger.error(f"❌ 运行账号测试失败: {e}\n{traceback.format_exc()}")
                     self.log_widget.add_log(f"❌ 运行账号测试失败: {e}")
                     self.account_tab.add_log(f"运行账号测试失败: {e}")
-            
-            # 在新线程中运行，避免阻塞GUI
             thread = threading.Thread(target=run_account_test, daemon=True)
             thread.start()
-            
             self.log_widget.add_log(f"📋 正在启动账号测试器，请稍候...")
-            
         except Exception as e:
-            logger.error(f"启动账号测试失败: {e}")
+            import traceback
+            logger.error(f"启动账号测试失败: {e}\n{traceback.format_exc()}")
             self.log_widget.add_log(f"❌ 启动账号测试失败: {e}")
             self.account_tab.add_log(f"启动账号测试失败: {e}")
             QMessageBox.critical(self, "错误", f"启动账号测试失败: {e}")

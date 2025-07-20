@@ -123,16 +123,16 @@ class PathDetector:
                 print(f"    是文件: {path.is_file() if path.exists() else 'N/A'}")
                 if path.exists() and path.is_file():
                     firefox_path = str(path)
-                    print(f"✅ 找到内置 Firefox: {firefox_path}")
+                    print(f"[成功] 找到内置 Firefox: {firefox_path}")
                     break
             
             if not firefox_path:
-                print(f"⚠️ 未找到内置 Firefox")
+                print(f"[警告] 未找到内置 Firefox")
                 print(f"  基础目录: {base_dir}")
                 print(f"  尝试的路径数: {len(possible_paths)}")
         else:
             # 开发环境 - 让Playwright自动管理
-            print("🔧 开发环境 - Firefox 由 Playwright 自动管理")
+            print("[开发] 开发环境 - Firefox 由 Playwright 自动管理")
             firefox_path = None
         
         self._cache['firefox_path'] = firefox_path
@@ -330,14 +330,14 @@ def main():
         print(f"  {key}: {value}")
     
     # 验证环境
-    print("\n✅ 环境验证:")
+    print("\n[验证] 环境验证:")
     validation = detector.validate_environment()
     for key, value in validation.items():
-        status = "✅" if value else "❌"
+        status = "[成功]" if value else "[错误]"
         print(f"  {status} {key}: {value}")
     
     # Playwright配置
-    print("\n🎭 Playwright配置:")
+    print("\n[配置] Playwright配置:")
     playwright_config = detector.get_playwright_config()
     for key, value in playwright_config.items():
         print(f"  {key}: {value}")

@@ -64,12 +64,8 @@ class AccountTester:
     async def _setup_browser(self):
         """设置浏览器"""
         self.playwright = await async_playwright().start()
-        
-        # 创建持久化上下文目录（使用账号对应的profile）
-        profile_dir = Path(f"firefox_profile/{self.account_name}")
+        profile_dir = Path(self._get_profile_dir())
         profile_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 准备launch_persistent_context的参数（参考publisher.py）
         launch_kwargs = {
             "user_data_dir": str(profile_dir),
             "headless": self.headless,
@@ -97,13 +93,9 @@ class AccountTester:
                 "network.captive-portal-service.enabled": False
             }
         }
-        
-        # 如果指定了executable_path，添加到参数中
         if self.executable_path:
             launch_kwargs["executable_path"] = self.executable_path
             logger.info(f"🦊 使用指定的Firefox路径: {self.executable_path}")
-        
-        # 尝试启动浏览器，包含详细的错误处理
         try:
             self.context = await self.playwright.firefox.launch_persistent_context(**launch_kwargs)
         except Exception as browser_error:
@@ -297,6 +289,14 @@ class AccountTester:
     def _get_firefox_path(self) -> Optional[str]:
         """获取Firefox浏览器路径"""
         try:
+            import sys
+            from pathlib import Path
+            # 优先判断PyInstaller打包环境
+            if getattr(sys, 'frozen', False):
+                base_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
+                firefox_path = base_dir / "browsers" / "firefox" / "firefox.exe"
+                if firefox_path.exists():
+                    return str(firefox_path)
             # 尝试从配置文件读取
             config_file = Path("config.json")
             if config_file.exists():
@@ -305,7 +305,6 @@ class AccountTester:
                     firefox_path = config.get('firefox_path')
                     if firefox_path and Path(firefox_path).exists():
                         return firefox_path
-            
             # 在macOS上查找常见的Firefox路径
             import platform
             if platform.system() == "Darwin":  # macOS
@@ -314,18 +313,36 @@ class AccountTester:
                     "/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox",
                     "~/Applications/Firefox.app/Contents/MacOS/firefox"
                 ]
-                
                 for path_str in common_paths:
                     path = Path(path_str).expanduser()
                     if path.exists():
                         logger.info(f"[检测] 找到系统 Firefox: {path}")
                         return str(path)
-            
             return None
-            
         except Exception as e:
             logger.error(f"获取Firefox路径失败: {e}")
             return None
+
+    def _get_profile_dir(self):
+        try:
+            # 尝试多种导入方式
+            try:
+                from packaging.scripts.path_detector import path_detector
+            except ImportError:
+                import sys
+                from pathlib import Path
+                # 手动添加路径
+                packaging_dir = Path(__file__).parent.parent / "packaging"
+                if packaging_dir.exists():
+                    sys.path.insert(0, str(packaging_dir))
+                    from scripts.path_detector import path_detector
+                else:
+                    raise ImportError("无法找到path_detector")
+            
+            return str(path_detector.get_user_data_dir())
+        except ImportError:
+            # 开发环境fallback
+            return "firefox_profile/main"
 
 
 async def test_account(account_name: str, headless: bool = False) -> Tuple[bool, str]:

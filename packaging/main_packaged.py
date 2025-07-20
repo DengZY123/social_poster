@@ -10,8 +10,8 @@ from pathlib import Path
 
 def show_startup_info():
     """显示启动信息"""
-    print("🚀 小红书发布工具 v1.0.0 启动中...")
-    print("📦 正在初始化应用环境...")
+    print("[启动] 小红书发布工具 v1.0.0 启动中...")
+    print("[初始化] 正在初始化应用环境...")
 
 def setup_environment():
     """快速设置环境"""
@@ -34,17 +34,17 @@ def main():
         # 快速环境设置
         setup_environment()
         
-        print("🔧 正在加载核心模块...")
+        print("[加载] 正在加载核心模块...")
         
         # 延迟导入大型库
         from packaging.app_config import setup_packaged_app
         
-        print("⚙️ 正在配置应用...")
+        print("[配置] 正在配置应用...")
         
         # 设置打包应用
         config, logger = setup_packaged_app()
         
-        print("🎨 正在启动用户界面...")
+        print("[界面] 正在启动用户界面...")
         
         # 延迟导入 GUI 相关库
         from PyQt6.QtWidgets import QApplication
@@ -59,7 +59,7 @@ def main():
         # PyQt6 默认启用高DPI支持，不需要手动设置
         # 如果需要特定的DPI设置，可以使用环境变量
         
-        print("✅ 应用启动完成！")
+        print("[完成] 应用启动完成！")
         
         # 创建主窗口
         window = MainWindow()
@@ -69,7 +69,7 @@ def main():
         sys.exit(app.exec())
         
     except Exception as e:
-        print(f"❌ 应用启动失败: {e}")
+        print(f"[错误] 应用启动失败: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

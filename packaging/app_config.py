@@ -127,14 +127,14 @@ class PackagedAppConfig:
             firefox_path = self.path_detector.get_firefox_path()
             if firefox_path:
                 # 有内置 Firefox，直接使用
-                print(f"🦊 使用内置 Firefox: {firefox_path}")
+                print(f"[检测] 使用内置 Firefox: {firefox_path}")
                 # 清除可能存在的环境变量，避免冲突
                 for env_var in ['PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_DRIVER_PATH', 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD']:
                     if env_var in os.environ:
                         del os.environ[env_var]
             else:
                 # 没有内置 Firefox，使用Playwright默认路径
-                print("⚠️ 未找到内置 Firefox，使用Playwright默认浏览器路径")
+                print("[检测] 未找到内置 Firefox，使用Playwright默认浏览器路径")
                 # 确保移除所有可能干扰的环境变量
                 for env_var in ['PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_DRIVER_PATH', 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD']:
                     if env_var in os.environ:
@@ -215,9 +215,9 @@ class PackagedAppConfig:
                         if firefox_path and Path(firefox_path).exists():
                             firefox_found = True
                             firefox_executable = firefox_path
-                            print(f"✅ 从配置文件读取Firefox路径: {firefox_executable}")
+                            print(f"[检测] 从配置文件读取Firefox路径: {firefox_executable}")
                 except Exception as e:
-                    print(f"⚠️ 读取JSON配置失败: {e}")
+                    print(f"[检测] 读取JSON配置失败: {e}")
             
             # 2. 尝试读取文本配置（备用）
             if not firefox_found:
@@ -228,9 +228,9 @@ class PackagedAppConfig:
                         if firefox_path and Path(firefox_path).exists():
                             firefox_found = True
                             firefox_executable = firefox_path
-                            print(f"✅ 从文本配置读取Firefox路径: {firefox_executable}")
+                            print(f"[检测] 从文本配置读取Firefox路径: {firefox_executable}")
                     except Exception as e:
-                        print(f"⚠️ 读取文本配置失败: {e}")
+                        print(f"[检测] 读取文本配置失败: {e}")
             
             # 3. 尝试自动检测
             if not firefox_found:
@@ -243,21 +243,21 @@ class PackagedAppConfig:
                         if exe_path.exists():
                             firefox_found = True
                             firefox_executable = str(exe_path)
-                            print(f"✅ 自动检测到Firefox: {firefox_executable}")
+                            print(f"[检测] 自动检测到Firefox: {firefox_executable}")
                             break
             
             if not firefox_found:
-                print("❌ 未找到Firefox浏览器")
-                print("💡 请运行 windows_setup\\install.bat 安装Firefox")
+                print("[检测] 未找到Firefox浏览器")
+                print("[检测] 请运行 windows_setup\\install.bat 安装Firefox")
                 raise Exception("浏览器未安装：请运行 install.bat 安装Firefox浏览器")
         
         else:
             # Linux
-            print("❌ Linux系统暂不支持")
+            print("[检测] Linux系统暂不支持")
             raise Exception("Linux系统暂不支持")
         
         if not firefox_found:
-            print("❌ 未找到Firefox浏览器")
+            print("[检测] 未找到Firefox浏览器")
             raise Exception("浏览器未安装：请安装Firefox浏览器后重试")
         
         config = {
@@ -273,7 +273,7 @@ class PackagedAppConfig:
         # 使用写死的Firefox路径
         if firefox_executable:
             config["executable_path"] = firefox_executable
-            print(f"🦊 配置使用Firefox: {firefox_executable}")
+            print(f"[检测] 配置使用Firefox: {firefox_executable}")
         
         # 添加Firefox偏好设置
         config["firefox_user_prefs"] = {
@@ -340,10 +340,10 @@ class PackagedAppConfig:
         for key, value in env_info.items():
             print(f"  {key}: {value}")
         
-        print("\n✅ 环境验证:")
+        print("\n[检测] 环境验证:")
         validation = self.validate_installation()
         for key, value in validation.items():
-            status = "✅" if value else "❌"
+            status = "[检测]" if value else "[检测]"
             print(f"  {status} {key}: {value}")
 
 
@@ -365,24 +365,24 @@ def setup_packaged_app():
     # 获取配置
     config = app_config_manager.get_app_config()
     
-    logger.info("🚀 打包应用初始化完成")
-    logger.info(f"📁 用户数据目录: {config.firefox_profile_path}")
-    logger.info(f"📝 任务文件: {config.tasks_file_path}")
+    logger.info("[检测] 打包应用初始化完成")
+    logger.info(f"[检测] 用户数据目录: {config.firefox_profile_path}")
+    logger.info(f"[检测] 任务文件: {config.tasks_file_path}")
     
     return config, logger
 
 def main():
     """测试配置适配器"""
-    print("⚙️ 应用配置适配器测试")
+    print("[检测] 应用配置适配器测试")
     app_config_manager.show_environment_info()
     
-    print("\n📋 应用配置:")
+    print("\n[检测] 应用配置:")
     config = get_app_config()
     config_dict = config.to_dict()
     for key, value in config_dict.items():
         print(f"  {key}: {value}")
     
-    print("\n🦊 Firefox配置:")
+    print("\n[检测] Firefox配置:")
     firefox_config = app_config_manager.get_firefox_launch_config()
     for key, value in firefox_config.items():
         print(f"  {key}: {value}")

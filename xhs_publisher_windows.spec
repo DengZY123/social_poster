@@ -40,14 +40,14 @@ firefox_paths = [
 firefox_found = False
 for firefox_path in firefox_paths:
     if firefox_path.exists() and (firefox_path / "firefox.exe").exists():
-        print(f"📦 发现本地 Firefox，将打包到应用中: {firefox_path}")
+        print(f"[INFO] 发现本地 Firefox，将打包到应用中: {firefox_path}")
         # 打包到 browsers/firefox 目录
         datas.append((str(firefox_path), "browsers/firefox"))
         firefox_found = True
         break
 
 if not firefox_found:
-    print("⚠️ 未找到本地 Firefox，应用将需要手动下载浏览器")
+    print("[WARNING] 未找到本地 Firefox，应用将需要手动下载浏览器")
     print("请确保已安装 Playwright 并下载了 Firefox 浏览器")
 
 # 添加配置文件和资源

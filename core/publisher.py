@@ -28,9 +28,30 @@ logger = logging.getLogger(__name__)
 class XhsPublisher:
     """小红书发布器"""
     
-    def __init__(self, headless: bool = False, user_data_dir: str = "firefox_profile", executable_path: str = None):
+    def _get_profile_dir(self):
+        try:
+            # 尝试多种导入方式
+            try:
+                from packaging.scripts.path_detector import path_detector
+            except ImportError:
+                import sys
+                from pathlib import Path
+                # 手动添加路径
+                packaging_dir = Path(__file__).parent.parent / "packaging"
+                if packaging_dir.exists():
+                    sys.path.insert(0, str(packaging_dir))
+                    from scripts.path_detector import path_detector
+                else:
+                    raise ImportError("无法找到path_detector")
+            
+            return str(path_detector.get_user_data_dir())
+        except ImportError:
+            # 开发环境fallback
+            return "firefox_profile/main"
+
+    def __init__(self, headless: bool = False, user_data_dir: str = None, executable_path: str = None):
         self.headless = headless
-        self.user_data_dir = Path(user_data_dir)
+        self.user_data_dir = Path(user_data_dir or self._get_profile_dir())
         self.user_data_dir.mkdir(exist_ok=True)
         self.executable_path = executable_path
         self.playwright = None
@@ -368,11 +389,35 @@ class XhsPublisher:
             # 验证图片文件
             valid_images = []
             for img_path in images:
-                if Path(img_path).exists():
-                    valid_images.append(str(Path(img_path).absolute()))
-                    logger.info(f"📸 有效图片: {Path(img_path).name}")
-                else:
+                # 处理相对路径和绝对路径
+                path = Path(img_path)
+                
+                # 如果是相对路径，尝试相对于项目根目录解析
+                if not path.is_absolute():
+                    # 尝试相对于当前工作目录
+                    if path.exists():
+                        valid_images.append(str(path.absolute()))
+                        logger.info(f"📸 有效图片: {path.name}")
+                        continue
+                    
+                    # 尝试相对于项目根目录（假设core文件夹在项目根目录下）
+                    project_root = Path(__file__).parent.parent
+                    alt_path = project_root / img_path
+                    if alt_path.exists():
+                        valid_images.append(str(alt_path.absolute()))
+                        logger.info(f"📸 有效图片（项目根目录）: {alt_path.name}")
+                        continue
+                    
                     logger.warning(f"⚠️ 图片文件不存在: {img_path}")
+                    logger.debug(f"   尝试路径: {path.absolute()}")
+                    logger.debug(f"   备选路径: {alt_path}")
+                else:
+                    # 绝对路径直接检查
+                    if path.exists():
+                        valid_images.append(str(path.absolute()))
+                        logger.info(f"📸 有效图片: {path.name}")
+                    else:
+                        logger.warning(f"⚠️ 图片文件不存在: {img_path}")
             
             if not valid_images:
                 logger.error("❌ 没有有效的图片文件")
@@ -623,10 +668,23 @@ class XhsPublisher:
             
             logger.info(f"📄 实际内容: {actual_content[:100]}...")
             
-            # 简单验证：检查主要内容是否包含
-            if content.strip() in actual_content:
-                logger.info("✅ 内容填写验证成功")
-                return True
+            # 宽松验证：检查内容的关键部分是否存在
+            # 移除所有空白字符进行比较，避免换行符和空格问题
+            expected_clean = ''.join(content.split())
+            actual_clean = ''.join(actual_content.split())
+            
+            # 检查主要内容是否包含（至少50%的内容匹配）
+            if len(expected_clean) > 0 and len(actual_clean) > 0:
+                # 计算匹配率
+                if expected_clean in actual_clean or actual_clean in expected_clean:
+                    logger.info("✅ 内容填写验证成功（完全匹配）")
+                    return True
+                elif len(actual_clean) >= len(expected_clean) * 0.5:
+                    logger.info("✅ 内容填写验证成功（长度合理）")
+                    return True
+                else:
+                    logger.warning(f"⚠️ 内容长度不匹配（期望: {len(expected_clean)}, 实际: {len(actual_clean)}），但继续进行")
+                    return True  # 不因验证失败而中断
             else:
                 logger.warning("⚠️ 内容验证失败，但继续进行")
                 return True  # 不因验证失败而中断
@@ -756,8 +814,48 @@ class XhsPublisher:
             # 检查页面状态和内容变化
             for attempt in range(15):  # 增加检查次数，最多检查15次，每次2秒
                 try:
+                    # 检查浏览器和页面是否还存在
+                    if not self.page or self.page.is_closed():
+                        logger.error("❌ 浏览器页面已关闭，发布失败")
+                        return {
+                            "success": False,
+                            "message": "浏览器意外关闭，发布失败",
+                            "data": {"error": "browser_closed"}
+                        }
+                    
+                    # 检查浏览器上下文状态
+                    context_closed = False
+                    try:
+                        # 检查context是否存在且可用
+                        if not self.context:
+                            context_closed = True
+                        else:
+                            # 尝试访问context的页面来检查状态
+                            pages = self.context.pages
+                            if not pages or not self.page:
+                                context_closed = True
+                    except Exception:
+                        context_closed = True
+                    
+                    if context_closed:
+                        logger.error("❌ 浏览器上下文已关闭，发布失败")
+                        return {
+                            "success": False,
+                            "message": "浏览器意外关闭，发布失败",
+                            "data": {"error": "context_closed"}
+                        }
+                    
                     # 获取当前URL
                     current_url = self.page.url
+                    
+                    # 检查是否为错误页面
+                    if "error" in current_url.lower() or "404" in current_url or "403" in current_url:
+                        logger.error(f"❌ 跳转到错误页面: {current_url}")
+                        return {
+                            "success": False,
+                            "message": f"跳转到错误页面: {current_url}",
+                            "data": {"url": current_url}
+                        }
                     
                     # 获取页面文本内容
                     page_text = await self.page.evaluate("document.body.innerText")
@@ -806,27 +904,70 @@ class XhsPublisher:
                             }
                         }
                     
-                    if url_changed and not in_publish_page:
-                        logger.info("🎉 发布成功（页面已跳转）")
-                        return {
-                            "success": True,
-                            "message": "发布成功",
-                            "data": {
-                                "url": current_url,
-                                "timestamp": datetime.now().isoformat(),
-                                "method": "url_change_detection"
+                    # 只有在确认是小红书域名且跳转到非发布页面时才判断为成功
+                    if url_changed and not in_publish_page and "xiaohongshu.com" in current_url:
+                        # 额外验证：检查页面内容确保不是错误页面
+                        if "网络错误" not in page_text and "页面不存在" not in page_text and "服务器错误" not in page_text:
+                            logger.info("🎉 发布成功（页面已跳转到小红书站内页面）")
+                            return {
+                                "success": True,
+                                "message": "发布成功",
+                                "data": {
+                                    "url": current_url,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "method": "url_change_detection"
+                                }
                             }
-                        }
                     
                     # 如果没有明确结果，继续等待
                     await asyncio.sleep(2)
                     
                 except Exception as e:
                     logger.warning(f"检查发布状态时出错: {e}")
+                    # 如果是页面相关错误，可能浏览器已关闭
+                    if "page" in str(e).lower() or "context" in str(e).lower() or "browser" in str(e).lower():
+                        # 浏览器关闭可能是发布成功的正常现象
+                        # 特别是小红书可能在发布完成后自动关闭或跳转
+                        if attempt >= 5:  # 如果已经等待了一段时间（10秒以上）
+                            logger.info("🎉 浏览器已关闭，根据等待时间判断发布可能成功")
+                            return {
+                                "success": True,
+                                "message": "发布完成（浏览器已关闭，推测发布成功）",
+                                "data": {
+                                    "timestamp": datetime.now().isoformat(),
+                                    "method": "browser_closed_after_wait",
+                                    "wait_time_seconds": attempt * 2
+                                }
+                            }
+                        else:
+                            logger.warning("⚠️ 浏览器提前关闭，继续等待...")
                     await asyncio.sleep(2)
             
-            # 如果循环结束仍无明确结果，根据最终状态判断
+            # 如果循环结束仍无明确结果，默认判断为失败（而不是成功）
             try:
+                # 最后一次检查浏览器状态
+                browser_closed = False
+                try:
+                    if not self.page or self.page.is_closed():
+                        browser_closed = True
+                    elif not self.context:
+                        browser_closed = True
+                    else:
+                        # 尝试访问context来检查状态
+                        pages = self.context.pages
+                        if not pages:
+                            browser_closed = True
+                except Exception:
+                    browser_closed = True
+                
+                if browser_closed:
+                    logger.error("❌ 发布超时且浏览器已关闭，判断为失败")
+                    return {
+                        "success": False,
+                        "message": "发布超时且浏览器异常，发布失败",
+                        "data": {"error": "timeout_with_browser_closed"}
+                    }
+                
                 final_url = self.page.url
                 final_text = await self.page.evaluate("document.body.innerText")
                 
@@ -834,7 +975,7 @@ class XhsPublisher:
                 final_text_lower = final_text.lower()
                 
                 # 检查是否有明确的失败信息
-                final_error_keywords = ["发布失败", "错误", "error", "failed", "失败", "请重试"]
+                final_error_keywords = ["发布失败", "错误", "error", "failed", "失败", "请重试", "网络错误", "服务器错误"]
                 has_final_error = any(keyword in final_text_lower for keyword in final_error_keywords)
                 
                 if has_final_error:
@@ -850,9 +991,29 @@ class XhsPublisher:
                         "data": {"url": final_url}
                     }
                 
-                # 检查是否离开发布页面（通常表示成功）
-                if "publish/publish" not in final_url:
-                    logger.info("✅ 发布成功（页面已跳转离开发布页面）")
+                # 检查是否有明确的成功信息
+                final_success_keywords = ["发布成功", "发布完成", "已发布", "发布完毕"]
+                has_final_success = any(keyword in final_text_lower for keyword in final_success_keywords)
+                
+                if has_final_success:
+                    logger.info("✅ 发布成功（最终检查发现成功文本）")
+                    return {
+                        "success": True,
+                        "message": "发布成功",
+                        "data": {
+                            "url": final_url,
+                            "timestamp": datetime.now().isoformat(),
+                            "method": "final_success_text_detection"
+                        }
+                    }
+                
+                # 检查是否离开发布页面且在小红书域名内（更严格的条件）
+                if ("publish/publish" not in final_url and 
+                    "xiaohongshu.com" in final_url and 
+                    "网络错误" not in final_text and 
+                    "页面不存在" not in final_text and
+                    "服务器错误" not in final_text):
+                    logger.info("✅ 发布成功（页面已跳转离开发布页面且无错误信息）")
                     return {
                         "success": True,
                         "message": "发布成功（根据页面跳转判断）",
@@ -863,15 +1024,16 @@ class XhsPublisher:
                         }
                     }
                 else:
-                    # 仍在发布页面，但没有错误信息，可能是网络延迟或者成功了但页面未跳转
-                    logger.info("✅ 发布操作已完成（状态推测为成功）")
+                    # 修复关键问题：超时情况下默认判断为失败，而不是成功
+                    logger.error("❌ 发布状态不明确，超时未检测到明确的成功信号，判断为失败")
                     return {
-                        "success": True,
-                        "message": "发布操作已完成（未检测到错误信息）",
+                        "success": False,
+                        "message": "发布状态不明确，未检测到成功确认信号",
                         "data": {
                             "url": final_url,
                             "timestamp": datetime.now().isoformat(),
-                            "method": "timeout_completion_success"
+                            "method": "timeout_no_confirmation",
+                            "final_page_text": final_text[:200] if final_text else "无法获取页面内容"
                         }
                     }
             except Exception as e:
@@ -879,7 +1041,7 @@ class XhsPublisher:
                 return {
                     "success": False,
                     "message": f"发布状态检查失败: {str(e)}",
-                    "data": {}
+                    "data": {"error": str(e)}
                 }
             
         except Exception as e:

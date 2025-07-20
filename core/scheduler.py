@@ -315,10 +315,10 @@ class SimpleScheduler(QObject):
                         logger.info(f"🌐 Firefox配置: headless={firefox_config.get('headless', False)}, "
                                   f"executable_path={firefox_config.get('executable_path', 'Playwright默认')}")
                     
-                    # 只传递 XhsPublisher 支持的参数
+                    # 只传递 XhsPublisher 支持的参数，但不传递user_data_dir让其自动检测
                     publisher_params = {
                         'headless': firefox_config.get('headless', False),
-                        'user_data_dir': firefox_config.get('user_data_dir', self.config.firefox_profile_path),
+                        # 移除user_data_dir参数，让XhsPublisher自动检测正确路径
                         'executable_path': firefox_config.get('executable_path', None)
                     }
                     
@@ -347,8 +347,18 @@ class SimpleScheduler(QObject):
                     loop.close()
                     
                     logger.info(f"✅ 任务执行完成: {task.title}")
-                    # 成功回调
-                    self._handle_task_success(task.id, {"status": "success", "result": result})
+                    
+                    # 检查实际发布结果
+                    if result and result.get("success", False):
+                        # 真正的成功
+                        logger.info(f"✅ 任务执行成功: {task.title}")
+                        self._handle_task_success(task.id, result)
+                    else:
+                        # 实际发布失败
+                        error_msg = result.get("message", "发布失败") if result else "未获取到发布结果"
+                        logger.error(f"❌ 任务发布失败: {task.title} - {error_msg}")
+                        self._handle_task_error(task.id, error_msg)
+                        
                 except Exception as e:
                     logger.error(f"❌ 任务执行失败: {task.title} - {e}")
                     # 失败回调
@@ -392,13 +402,20 @@ class SimpleScheduler(QObject):
             if not task:
                 logger.error(f"❌ 找不到任务: {task_id}")
                 return
-                
-            task.mark_completed(result.get("message", "发布成功"))
-            self.task_storage.update_task(task)
-            self.executing_tasks.discard(task_id)
             
-            logger.info(f"✅ 任务执行成功: {task.title}")
-            self.task_completed.emit(task_id, result)
+            # 双重检查确保真正成功
+            if result and result.get("success", False):
+                task.mark_completed(result.get("message", "发布成功"))
+                self.task_storage.update_task(task)
+                self.executing_tasks.discard(task_id)
+                
+                logger.info(f"✅ 任务执行成功: {task.title}")
+                self.task_completed.emit(task_id, result)
+            else:
+                # 即使调用了success回调，但实际结果是失败
+                error_msg = result.get("message", "发布失败") if result else "未获取到发布结果"
+                logger.error(f"❌ 任务实际执行失败: {task.title} - {error_msg}")
+                self._handle_task_error(task_id, error_msg)
             
         except Exception as e:
             logger.error(f"❌ 处理任务成功结果失败: {e}")

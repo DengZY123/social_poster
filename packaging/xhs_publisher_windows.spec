@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(SPECPATH).parent
 PACKAGING_DIR = Path(SPECPATH)
 
 # 应用信息
-APP_NAME = "XhsPublisher"
+APP_NAME = "XhsPublisher_Console"
 APP_VERSION = "1.0.0"
 APP_DESCRIPTION = "小红书定时发布工具"
 APP_AUTHOR = "XHS Publisher Team"
@@ -40,14 +40,14 @@ firefox_paths = [
 firefox_found = False
 for firefox_path in firefox_paths:
     if firefox_path.exists() and (firefox_path / "firefox.exe").exists():
-        print(f"📦 发现本地 Firefox，将打包到应用中: {firefox_path}")
+        print(f"[Firefox] 发现本地 Firefox，将打包到应用中: {firefox_path}")
         # 打包到 browsers/firefox 目录
         datas.append((str(firefox_path), "browsers/firefox"))
         firefox_found = True
         break
 
 if not firefox_found:
-    print("⚠️ 未找到本地 Firefox，应用将需要手动下载浏览器")
+    print("[警告] 未找到本地 Firefox，应用将需要手动下载浏览器")
     print("请确保已安装 Playwright 并下载了 Firefox 浏览器")
 
 # 添加配置文件和资源
@@ -82,7 +82,7 @@ excludes = [
     'pdb', 'doctest', 'pydoc',
     
     # 大型科学计算库（如果不需要）
-    'matplotlib', 'scipy', 'sympy', 'numpy',
+    'matplotlib', 'scipy', 'sympy',
     
     # 网络相关（如果不需要）
     'http.server', 'xmlrpc',
@@ -129,6 +129,7 @@ hiddenimports = [
     
     # 数据处理
     'pandas',
+    'numpy',
     'openpyxl',
     'ujson',
     'loguru',
@@ -180,7 +181,7 @@ exe = EXE(
         "msvcp140.dll",
     ],
     runtime_tmpdir=None,
-    console=False,  # GUI应用，不显示控制台
+    console=True,  # 控制台版本，显示调试信息
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
@@ -192,7 +193,7 @@ exe = EXE(
 # ===================== 调试信息 =====================
 
 print("=" * 60)
-print(f"📦 Windows PyInstaller配置信息")
+print(f"[配置] Windows PyInstaller配置信息")
 print("=" * 60)
 print(f"应用名称: {APP_NAME}")
 print(f"版本号: {APP_VERSION}")
