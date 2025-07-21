@@ -4,17 +4,29 @@
 import asyncio
 import json
 import platform
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from loguru import logger
+from .profile_manager import get_account_profile_dir
 
 
 class AccountTester:
     """账号测试器"""
     
+    # 类级别的实例计数器和活动实例管理
+    _instance_count = 0
+    _instance_lock = threading.Lock()
+    _active_tester_instance = None  # 当前活动的测试器实例（只限制AccountTester）
+    
     def __init__(self, account_name: str, headless: bool = False):
+        with AccountTester._instance_lock:
+            AccountTester._instance_count += 1
+            self.instance_id = AccountTester._instance_count
+            logger.info(f"🔢 创建 AccountTester 实例 #{self.instance_id} for {account_name}")
+        
         self.account_name = account_name
         self.headless = headless
         self.playwright = None
@@ -22,50 +34,84 @@ class AccountTester:
         self.page: Optional[Page] = None
         self.executable_path = self._get_firefox_path()
     
-    async def test_account(self) -> Tuple[bool, str]:
+    async def test_account(self) -> Tuple[bool, str, Optional[str]]:
         """
         测试账号登录状态
-        返回: (是否成功, 状态信息)
+        返回: (是否成功, 状态信息, 用户名)
         """
         try:
             logger.info(f"[检测] 开始测试账号: {self.account_name}")
             
             # 启动浏览器
             await self._setup_browser()
+            logger.info(f"✅ 实例 #{self.instance_id} 浏览器设置完成")
             
             # 访问创作者中心发布页面
-            logger.info("📱 访问创作者中心发布页面...")
+            logger.info(f"📱 实例 #{self.instance_id} 准备访问创作者中心发布页面...")
             publish_url = 'https://creator.xiaohongshu.com/publish/publish?from=tab_switch'
-            await self.page.goto(publish_url, wait_until='networkidle')
+            logger.info(f"🔗 实例 #{self.instance_id} 导航到: {publish_url}")
+            
+            try:
+                await self.page.goto(publish_url, wait_until='networkidle', timeout=30000)
+                logger.info(f"✅ 实例 #{self.instance_id} 页面导航成功")
+            except Exception as nav_error:
+                logger.error(f"❌ 实例 #{self.instance_id} 页面导航失败: {nav_error}")
+                raise
+            
             await asyncio.sleep(3)
+            logger.info(f"⏳ 实例 #{self.instance_id} 等待页面稳定完成")
             
             # 检查登录状态
             is_logged_in, current_url = await self._check_login_status()
             
             if is_logged_in:
                 # 获取用户信息
-                user_info = await self._get_user_info()
+                user_info, username = await self._get_user_info()
                 status_info = f"✅ 账号有效 - {user_info}"
                 logger.success(f"✅ 账号 {self.account_name} 测试通过: {user_info}")
-                return True, status_info
+                return True, status_info, username
             else:
                 # 如果未登录，等待用户手动登录
                 logger.info(f"🔗 当前在登录页面: {current_url}")
-                status_info = await self._wait_for_manual_login()
-                return status_info.startswith("✅"), status_info
+                status_info, username = await self._wait_for_manual_login()
+                return status_info.startswith("✅"), status_info, username
                 
         except Exception as e:
+            import traceback
             error_msg = f"❌ 测试失败: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
+            logger.error(f"实例 #{self.instance_id} {error_msg}")
+            logger.error(f"详细错误: \n{traceback.format_exc()}")
+            return False, error_msg, None
         finally:
             await self._cleanup()
     
     async def _setup_browser(self):
         """设置浏览器"""
+        logger.info(f"🚀 AccountTester #{self.instance_id}._setup_browser 开始: {self.account_name}")
+        
+        # 检查是否已有活动实例
+        with AccountTester._instance_lock:
+            if AccountTester._active_tester_instance is not None:
+                logger.warning(f"⚠️ 已有活动的AccountTester实例 #{AccountTester._active_tester_instance}，拒绝创建新浏览器")
+                raise Exception("已有账号测试正在进行中，请稍后再试")
+            AccountTester._active_tester_instance = self.instance_id
+            logger.info(f"✅ 设置活动实例为 #{self.instance_id}")
+        
+        # 启动 playwright
         self.playwright = await async_playwright().start()
         profile_dir = Path(self._get_profile_dir())
         profile_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 实例 #{self.instance_id} 使用profile目录: {profile_dir}")
+        
+        # 确保profile目录下没有锁文件
+        lock_files = list(profile_dir.glob("**/lock"))
+        lock_files.extend(list(profile_dir.glob("**/.parentlock")))
+        for lock_file in lock_files:
+            try:
+                lock_file.unlink()
+                logger.info(f"🔓 删除锁文件: {lock_file}")
+            except:
+                pass
         launch_kwargs = {
             "user_data_dir": str(profile_dir),
             "headless": self.headless,
@@ -73,7 +119,11 @@ class AccountTester:
             "viewport": {'width': 1366, 'height': 768},
             "locale": 'zh-CN',
             "timezone_id": 'Asia/Shanghai',
-            "args": ['--no-sandbox'],
+            "args": [
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process'
+            ],
             "firefox_user_prefs": {
                 "dom.webdriver.enabled": False,
                 "useAutomationExtension": False,
@@ -97,8 +147,42 @@ class AccountTester:
             launch_kwargs["executable_path"] = self.executable_path
             logger.info(f"🦊 使用指定的Firefox路径: {self.executable_path}")
         try:
+            logger.info(f"🔧 实例 #{self.instance_id} 调用 launch_persistent_context...")
+            logger.info(f"🔧 launch_kwargs: user_data_dir={launch_kwargs.get('user_data_dir')}, headless={launch_kwargs.get('headless')}")
+            
+            # 调用前检查进程
+            import subprocess
+            import platform
+            if platform.system() == "Darwin":  # macOS
+                firefox_count_before = subprocess.run(['pgrep', '-i', 'firefox'], capture_output=True, text=True).stdout.count('\n')
+            else:
+                firefox_count_before = subprocess.run(['pgrep', '-f', 'firefox'], capture_output=True, text=True).stdout.count('\n')
+            logger.info(f"🔍 调用前Firefox进程数: {firefox_count_before}")
+            
             self.context = await self.playwright.firefox.launch_persistent_context(**launch_kwargs)
+            logger.info(f"✅ 实例 #{self.instance_id} launch_persistent_context 调用成功")
+            
+            # 调用后检查进程
+            await asyncio.sleep(1)  # 等待进程启动
+            if platform.system() == "Darwin":  # macOS
+                firefox_count_after = subprocess.run(['pgrep', '-i', 'firefox'], capture_output=True, text=True).stdout.count('\n')
+            else:
+                firefox_count_after = subprocess.run(['pgrep', '-f', 'firefox'], capture_output=True, text=True).stdout.count('\n')
+            logger.info(f"🔍 调用后Firefox进程数: {firefox_count_after}")
+            logger.info(f"🔍 新增Firefox进程数: {firefox_count_after - firefox_count_before}")
+            
+            # 暂时注释掉窗口信息获取，可能导致阻塞
+            # if platform.system() == "Darwin":
+            #     try:
+            #         window_list = subprocess.run(['osascript', '-e', 'tell application "System Events" to get name of every window of every process whose name contains "Firefox"'], 
+            #                                    capture_output=True, text=True, timeout=2)  # 添加超时
+            #         logger.info(f"🪟 Firefox窗口列表: {window_list.stdout.strip()}")
+            #     except Exception as window_error:
+            #         logger.warning(f"⚠️ 获取窗口信息失败: {window_error}")
+            #         pass
+            
         except Exception as browser_error:
+            logger.error(f"🔥 实例 #{self.instance_id} 浏览器启动异常捕获")
             error_msg = str(browser_error)
             
             # 检查是否是浏览器未安装的错误
@@ -134,12 +218,33 @@ class AccountTester:
             # 重新抛出错误给上层调用者
             raise Exception(f"浏览器启动失败: {error_msg}")
         
-        self.page = await self.context.new_page()
+        # launch_persistent_context 会自动创建一个页面
+        pages = self.context.pages
+        logger.info(f"📄 实例 #{self.instance_id} 现有页面数: {len(pages)}")
+        
+        if pages:
+            # 使用已有的页面
+            self.page = pages[0]
+            logger.info(f"✅ 实例 #{self.instance_id} 使用已有页面")
+        else:
+            # 如果没有页面，创建一个新的
+            logger.info(f"🔧 实例 #{self.instance_id} 准备创建新页面...")
+            self.page = await self.context.new_page()
+            logger.info(f"✅ 实例 #{self.instance_id} 创建新页面成功")
         
         # 设置用户代理
         await self.page.set_extra_http_headers({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
+        logger.info(f"✅ 实例 #{self.instance_id} 设置用户代理成功")
+        
+        # 先导航到一个简单的页面测试
+        try:
+            logger.info(f"🧪 实例 #{self.instance_id} 测试导航到about:blank")
+            await self.page.goto('about:blank')
+            logger.info(f"✅ 实例 #{self.instance_id} about:blank导航成功")
+        except Exception as test_nav_error:
+            logger.error(f"❌ 实例 #{self.instance_id} 测试导航失败: {test_nav_error}")
     
     async def _check_login_status(self) -> tuple[bool, str]:
         """检查登录状态
@@ -184,8 +289,10 @@ class AccountTester:
             logger.error(f"检查登录状态失败: {e}")
             return False, self.page.url if self.page else "unknown"
     
-    async def _get_user_info(self) -> str:
-        """获取用户信息"""
+    async def _get_user_info(self) -> tuple[str, str]:
+        """获取用户信息
+        返回: (显示信息, 用户名)
+        """
         try:
             # 等待页面元素加载
             await asyncio.sleep(2)
@@ -217,20 +324,22 @@ class AccountTester:
                                 nickname = nickname.strip()
                                 if not any(keyword in nickname for keyword in ['登录', '注册', '发布', '保存', '取消', '确定']):
                                     logger.info(f"✅ 获取到用户信息: {nickname}")
-                                    return f"用户: {nickname}"
+                                    return f"用户: {nickname}", nickname
                 except Exception as e:
                     continue
             
             # 如果找不到具体用户名，返回通用信息
             logger.info("ℹ️ 未能获取具体用户名，但登录状态正常")
-            return "已登录创作者中心"
+            return "已登录创作者中心", None
             
         except Exception as e:
             logger.error(f"获取用户信息失败: {e}")
-            return "已登录创作者中心"
+            return "已登录创作者中心", None
     
-    async def _wait_for_manual_login(self) -> str:
-        """等待用户手动登录"""
+    async def _wait_for_manual_login(self) -> tuple[str, Optional[str]]:
+        """等待用户手动登录
+        返回: (状态信息, 用户名)
+        """
         try:
             logger.info("⏳ 等待用户手动登录...")
             logger.info("请在浏览器中完成登录，登录成功后会自动检测")
@@ -242,23 +351,23 @@ class AccountTester:
             while True:
                 # 检查是否超时
                 if (datetime.now() - start_time).total_seconds() > timeout / 1000:
-                    return "❌ 登录超时"
+                    return "❌ 登录超时", None
                 
                 # 检查登录状态
                 is_logged_in, current_url = await self._check_login_status()
                 if is_logged_in:
                     # 保存登录状态
                     await self._save_storage_state()
-                    user_info = await self._get_user_info()
+                    user_info, username = await self._get_user_info()
                     logger.success(f"✅ 检测到登录成功，跳转到发布页面: {current_url}")
-                    return f"✅ 手动登录成功 - {user_info}"
+                    return f"✅ 手动登录成功 - {user_info}", username
                 
                 # 等待一段时间再检查
                 await asyncio.sleep(2)
                 
         except Exception as e:
             logger.error(f"等待手动登录失败: {e}")
-            return f"❌ 等待登录失败: {str(e)}"
+            return f"❌ 等待登录失败: {str(e)}", None
     
     async def _save_storage_state(self):
         """保存浏览器存储状态"""
@@ -282,7 +391,14 @@ class AccountTester:
             if self.playwright:
                 await self.playwright.stop()
                 self.playwright = None
-            logger.info("🔒 浏览器已关闭")
+            
+            # 释放活动实例锁
+            with AccountTester._instance_lock:
+                if AccountTester._active_tester_instance == self.instance_id:
+                    AccountTester._active_tester_instance = None
+                    logger.info(f"🔓 释放活动实例锁 #{self.instance_id}")
+            
+            logger.info(f"🔒 浏览器已关闭 (实例 #{self.instance_id})")
         except Exception as e:
             logger.error(f"清理资源失败: {e}")
     
@@ -324,28 +440,11 @@ class AccountTester:
             return None
 
     def _get_profile_dir(self):
-        try:
-            # 尝试多种导入方式
-            try:
-                from packaging.scripts.path_detector import path_detector
-            except ImportError:
-                import sys
-                from pathlib import Path
-                # 手动添加路径
-                packaging_dir = Path(__file__).parent.parent / "packaging"
-                if packaging_dir.exists():
-                    sys.path.insert(0, str(packaging_dir))
-                    from scripts.path_detector import path_detector
-                else:
-                    raise ImportError("无法找到path_detector")
-            
-            return str(path_detector.get_user_data_dir())
-        except ImportError:
-            # 开发环境fallback
-            return "firefox_profile/main"
+        """获取profile目录 - 使用统一的profile管理"""
+        return get_account_profile_dir(self.account_name)
 
 
-async def test_account(account_name: str, headless: bool = False) -> Tuple[bool, str]:
+async def test_account(account_name: str, headless: bool = False) -> Tuple[bool, str, Optional[str]]:
     """
     测试账号的便捷函数
     """
@@ -365,7 +464,7 @@ def main():
     headless = '--headless' in sys.argv
     
     # 运行测试
-    success, status = asyncio.run(test_account(account_name, headless))
+    success, status, username = asyncio.run(test_account(account_name, headless))
     
     # 更新账号状态
     try:
@@ -379,6 +478,9 @@ def main():
                 if account['name'] == account_name:
                     account['status'] = status
                     account['last_login'] = datetime.now().isoformat() if success else account.get('last_login', '')
+                    # 如果获取到用户名，更新它
+                    if username and username != account_name:
+                        account['username'] = username
                     break
             
             # 保存更新

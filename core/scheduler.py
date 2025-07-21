@@ -4,6 +4,7 @@
 """
 import sys
 import json
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Callable
@@ -23,6 +24,7 @@ class SimpleScheduler(QObject):
     task_completed = pyqtSignal(str, dict)  # 任务完成 (task_id, result)
     task_failed = pyqtSignal(str, str)  # 任务失败 (task_id, error_message)
     scheduler_status = pyqtSignal(str)  # 调度器状态变化
+    scheduler_message = pyqtSignal(str)  # 调度器消息（用于通知用户重要信息）
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,6 +56,7 @@ class SimpleScheduler(QObject):
         # 状态
         self.is_running = False
         self.executing_tasks = set()  # 正在执行的任务ID
+        self._execute_lock = threading.Lock()  # 用于并发控制的锁
         
         # 定期清理定时器（每半小时清理一次）
         self.cleanup_timer = QTimer(self)
@@ -155,20 +158,32 @@ class SimpleScheduler(QObject):
                 logger.debug("⏸️ 没有需要执行的任务")
                 return
             
-            logger.info(f"🎯 发现 {len(all_ready_tasks)} 个待执行任务")
+            message = f"🎯 发现 {len(all_ready_tasks)} 个待执行任务"
+            logger.info(message)
+            self.scheduler_message.emit(message)
             
             for task in all_ready_tasks:
-                if task.id in self.executing_tasks:
-                    logger.debug(f"⏳ 任务正在执行中，跳过: {task.title}")
+                # 重新获取最新的任务状态
+                current_task = self.task_storage.get_task_by_id(task.id)
+                if not current_task:
+                    continue
+                
+                # 检查任务是否已经在执行中
+                if current_task.status == TaskStatus.RUNNING or task.id in self.executing_tasks:
+                    message = f"⏳ 任务正在执行中，跳过: {current_task.title}"
+                    logger.debug(message)
+                    self.scheduler_message.emit(message)
                     continue
                 
                 # 检查发布间隔限制
                 if not self._check_publish_interval():
-                    logger.warning("⚠️ 发布间隔太短，跳过本次执行")
+                    message = "⚠️ 发布间隔太短，跳过本次执行"
+                    logger.warning(message)
+                    self.scheduler_message.emit(message)
                     continue
                 
-                # 异步执行任务
-                self._execute_task_async(task)
+                # 异步执行任务 - 传递最新的任务对象
+                self._execute_task_async(current_task)
                 
         except Exception as e:
             logger.error(f"❌ 检查任务时出错: {e}")
@@ -194,7 +209,9 @@ class SimpleScheduler(QObject):
             
             if time_since_last < min_interval:
                 remaining = min_interval - time_since_last
-                logger.warning(f"⚠️ 距离上次发布时间过短，还需等待 {remaining.total_seconds():.0f} 秒")
+                message = f"⚠️ 距离上次发布时间过短，还需等待 {remaining.total_seconds():.0f} 秒"
+                logger.warning(message)
+                self.scheduler_message.emit(message)
                 return False
         
         return True
@@ -202,16 +219,33 @@ class SimpleScheduler(QObject):
     def _execute_task_async(self, task: PublishTask):
         """异步执行任务 - 直接调用版本"""
         try:
-            # 检查是否已有任务在执行中（避免多个浏览器实例）
-            if len(self.executing_tasks) > 0:
-                logger.warning(f"⚠️ 已有 {len(self.executing_tasks)} 个任务在执行，拒绝新任务")
-                self._handle_task_error(task.id, "已有任务在执行中，请等待完成")
-                return
-            
-            # 标记任务开始执行
-            task.mark_running()
-            self.task_storage.update_task(task)
-            self.executing_tasks.add(task.id)
+            # 使用锁来确保并发安全
+            with self._execute_lock:
+                # 检查是否已有任务在执行中（避免多个浏览器实例）
+                if len(self.executing_tasks) > 0:
+                    logger.warning(f"⚠️ 已有 {len(self.executing_tasks)} 个任务在执行，拒绝新任务")
+                    self._handle_task_error(task.id, "已有任务在执行中，请等待完成")
+                    return
+                
+                # 再次检查任务状态，防止重复执行
+                current_task = self.task_storage.get_task_by_id(task.id)
+                if not current_task:
+                    logger.error(f"❌ 任务不存在: {task.id}")
+                    return
+                
+                if current_task.status != TaskStatus.PENDING:
+                    logger.warning(f"⚠️ 任务状态不是等待中，跳过执行: {current_task.title} (状态: {current_task.status})")
+                    return
+                
+                # 检查任务是否已经在执行集合中（双重检查）
+                if task.id in self.executing_tasks:
+                    logger.warning(f"⚠️ 任务已经在执行集合中: {task.title}")
+                    return
+                
+                # 立即标记任务开始执行并添加到执行集合（原子操作）
+                self.executing_tasks.add(task.id)
+                task.mark_running()
+                self.task_storage.update_task(task)
             
             logger.info(f"🚀 开始执行任务: {task.title}")
             self.task_started.emit(task.id)
@@ -315,10 +349,11 @@ class SimpleScheduler(QObject):
                         logger.info(f"🌐 Firefox配置: headless={firefox_config.get('headless', False)}, "
                                   f"executable_path={firefox_config.get('executable_path', 'Playwright默认')}")
                     
-                    # 只传递 XhsPublisher 支持的参数，但不传递user_data_dir让其自动检测
+                    # 传递必要的参数，但不传递user_data_dir，让publisher使用统一的profile管理
                     publisher_params = {
                         'headless': firefox_config.get('headless', False),
-                        # 移除user_data_dir参数，让XhsPublisher自动检测正确路径
+                        # 不传递user_data_dir，让XhsPublisher使用自己的_get_profile_dir()方法
+                        # 'user_data_dir': firefox_config.get('user_data_dir', self.config.firefox_profile_path),
                         'executable_path': firefox_config.get('executable_path', None)
                     }
                     
@@ -363,6 +398,9 @@ class SimpleScheduler(QObject):
                     logger.error(f"❌ 任务执行失败: {task.title} - {e}")
                     # 失败回调
                     self._handle_task_error(task.id, str(e))
+                finally:
+                    # 确保任务从执行集合中移除
+                    self.executing_tasks.discard(task.id)
             
             thread = threading.Thread(target=run_async_task, daemon=True)
             thread.start()

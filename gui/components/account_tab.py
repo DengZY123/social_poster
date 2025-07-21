@@ -4,6 +4,7 @@
 """
 import sys
 import json
+import webbrowser
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -117,7 +118,7 @@ class AccountTab(QWidget):
     def setup_table(self):
         """设置表格"""
         # 设置列
-        headers = ["平台", "账号名称", "状态", "最后登录时间", "备注", "操作", "测试"]
+        headers = ["平台", "账号名称", "状态", "最后登录时间", "备注", "操作", "登录"]
         self.account_table.setColumnCount(len(headers))
         self.account_table.setHorizontalHeaderLabels(headers)
         
@@ -134,8 +135,8 @@ class AccountTab(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # 最后登录时间
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # 备注
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # 操作
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # 测试
-        header.resizeSection(5, 120)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # 登录
+        header.resizeSection(5, 180)  # 增加宽度以容纳新按钮
         header.resizeSection(6, 80)
         
         # 连接选择变化信号
@@ -192,20 +193,41 @@ class AccountTab(QWidget):
         except Exception as e:
             logger.error(f"保存账号失败: {e}")
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+    def _parse_display_status(self, raw_status: str) -> str:
+        """解析原始状态信息，返回显示用的简洁状态"""
+        if not raw_status:
+            return "未测试"
+        
+        # 转换为小写便于匹配
+        status_lower = raw_status.lower()
+        
+        # 根据关键词判断状态
+        if '有效' in raw_status or '登录成功' in raw_status or '已登录' in status_lower:
+            return "已登录"
+        elif '失败' in raw_status or '失效' in raw_status or '未登录' in status_lower or 'error' in status_lower:
+            return "未登录"
+        elif raw_status == '未测试':
+            return "未测试"
+        else:
+            # 默认返回未测试
+            return "未测试"
     
     def update_table(self):
         """更新表格显示"""
+        # 清理现有的单元格部件，防止重复创建
+        for row in range(self.account_table.rowCount()):
+            # 清理操作按钮
+            widget = self.account_table.cellWidget(row, 5)
+            if widget:
+                self.account_table.removeCellWidget(row, 5)
+                widget.deleteLater()
+            
+            # 清理登录按钮
+            widget = self.account_table.cellWidget(row, 6)
+            if widget:
+                self.account_table.removeCellWidget(row, 6)
+                widget.deleteLater()
+        
         self.account_table.setRowCount(len(self.accounts))
         
         for row, account in enumerate(self.accounts):
@@ -213,22 +235,25 @@ class AccountTab(QWidget):
             platform_item = QTableWidgetItem(account['platform'])
             self.account_table.setItem(row, 0, platform_item)
             
-            # 账号名称
-            name_item = QTableWidgetItem(account['name'])
+            # 账号名称 - 优先显示实际用户名
+            display_name = account.get('username', account['name'])
+            name_item = QTableWidgetItem(display_name)
             name_item.setData(Qt.ItemDataRole.UserRole, account)  # 存储完整账号数据
             self.account_table.setItem(row, 1, name_item)
             
-            # 状态
-            status_item = QTableWidgetItem(account.get('status', '未测试'))
+            # 状态 - 解析并显示简洁状态
+            raw_status = account.get('status', '未测试')
+            display_status = self._parse_display_status(raw_status)
+            status_item = QTableWidgetItem(display_status)
+            
             # 根据状态设置颜色
-            status = account.get('status', '未测试')
-            if '有效' in status:
+            if display_status == '已登录':
                 status_item.setBackground(QBrush(QColor("#d4edda")))
                 status_item.setForeground(QBrush(QColor("#155724")))
-            elif '失效' in status or '失败' in status:
+            elif display_status == '未登录':
                 status_item.setBackground(QBrush(QColor("#f8d7da")))
                 status_item.setForeground(QBrush(QColor("#721c24")))
-            else:
+            else:  # 未测试
                 status_item.setBackground(QBrush(QColor("#fff3cd")))
                 status_item.setForeground(QBrush(QColor("#856404")))
             self.account_table.setItem(row, 2, status_item)
@@ -258,8 +283,8 @@ class AccountTab(QWidget):
             # 操作按钮
             self.create_action_buttons(row, account)
             
-            # 测试按钮
-            self.create_test_button(row, account)
+            # 登录按钮
+            self.create_login_button(row, account)
     
     def create_action_buttons(self, row: int, account: dict):
         """创建操作按钮"""
@@ -283,7 +308,7 @@ class AccountTab(QWidget):
                 background-color: #0056b3;
             }
         """)
-        edit_btn.clicked.connect(lambda: self.edit_account(account))
+        edit_btn.clicked.connect(lambda checked=False, acc=account: self.edit_account(acc))
         button_layout.addWidget(edit_btn)
         
         # 删除按钮
@@ -301,18 +326,36 @@ class AccountTab(QWidget):
                 background-color: #c82333;
             }
         """)
-        delete_btn.clicked.connect(lambda: self.delete_account(account))
+        delete_btn.clicked.connect(lambda checked=False, acc=account: self.delete_account(acc))
         button_layout.addWidget(delete_btn)
+        
+        # 打开创作中心按钮
+        creator_btn = QPushButton("创作中心")
+        creator_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #17a2b8;
+                color: white;
+                border: none;
+                padding: 4px 8px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+        """)
+        creator_btn.clicked.connect(lambda checked=False, acc=account: self.open_creator_center(acc))
+        button_layout.addWidget(creator_btn)
         
         self.account_table.setCellWidget(row, 5, button_widget)
     
-    def create_test_button(self, row: int, account: dict):
-        """创建测试按钮"""
-        test_btn = QPushButton("测试")
-        test_btn.setStyleSheet("""
+    def create_login_button(self, row: int, account: dict):
+        """创建登录按钮"""
+        login_btn = QPushButton("登录")
+        login_btn.setStyleSheet("""
             QPushButton {
-                background-color: #ffc107;
-                color: #212529;
+                background-color: #28a745;
+                color: white;
                 border: none;
                 padding: 4px 8px;
                 border-radius: 3px;
@@ -320,11 +363,17 @@ class AccountTab(QWidget):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #e0a800;
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                cursor: not-allowed;
             }
         """)
-        test_btn.clicked.connect(lambda: self.test_account(account))
-        self.account_table.setCellWidget(row, 6, test_btn)
+        # 传递按钮引用，以便在登录时禁用
+        # 使用默认参数来避免闭包问题
+        login_btn.clicked.connect(lambda checked=False, acc=account, btn=login_btn: self.login_account(acc, btn))
+        self.account_table.setCellWidget(row, 6, login_btn)
     
     def add_account(self):
         """添加账号"""
@@ -416,11 +465,56 @@ class AccountTab(QWidget):
             
             QMessageBox.information(self, "成功", f"账号 '{account['name']}' 已删除")
     
-    def test_account(self, account: dict):
-        """测试账号登录状态"""
-        logger.info(f"🔐 测试账号登录状态: {account['name']}")
-        self.add_log(f"测试账号登录状态: {account['name']}")
+    def login_account(self, account: dict, button: QPushButton = None):
+        """登录账号"""
+        logger.info(f"🔐 登录账号: {account['name']}")
+        self.add_log(f"登录账号: {account['name']}")
+        
+        # 禁用按钮，防止重复点击
+        if button:
+            button.setEnabled(False)
+            button.setText("登录中...")
+        
+        # 存储按钮引用，以便在登录完成后重新启用
+        self._login_button = button
+        self._login_account_name = account['name']
+        
         self.login_requested.emit(account['name'])
+    
+    def open_creator_center(self, account: dict):
+        """打开创作中心"""
+        import webbrowser
+        
+        account_name = account['name']
+        
+        # 检查账号状态（可选，提醒用户）
+        status = account.get('status', '未测试')
+        if '有效' not in status and '登录' not in status:
+            reply = QMessageBox.question(
+                self, 
+                "提示", 
+                f"账号 {account_name} 未登录，创作中心可能需要重新登录。\n\n是否继续打开？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        
+        url = "https://creator.xiaohongshu.com/new/note-manager?source=official"
+        logger.info(f"🌐 打开创作中心: {url}")
+        self.add_log(f"打开创作中心")
+        
+        try:
+            webbrowser.open(url)
+            self.add_log("创作中心已在默认浏览器中打开")
+        except Exception as e:
+            logger.error(f"打开创作中心失败: {e}")
+            self.add_log(f"打开创作中心失败: {e}")
+            QMessageBox.warning(self, "错误", f"无法打开创作中心: {e}")
+    
+    def _show_error(self, error_msg: str):
+        """在主线程中显示错误消息"""
+        self.add_log(f"❌ {error_msg}")
+        QMessageBox.warning(self, "错误", error_msg)
     
     def refresh_accounts(self):
         """刷新账号列表"""
@@ -458,8 +552,54 @@ class AccountTab(QWidget):
         cursor = self.operation_log.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         self.operation_log.setTextCursor(cursor)
+        
+        # 检查是否是登录完成的消息，恢复按钮状态
+        if hasattr(self, '_login_button') and self._login_button:
+            if ("账号测试完成" in message or "账号测试失败" in message or 
+                "运行账号测试失败" in message or "测试结果:" in message or
+                "账号有效" in message or "手动登录成功" in message or
+                "登录超时" in message or "启动账号测试失败" in message):
+                # 恢复按钮状态
+                self._login_button.setEnabled(True)
+                self._login_button.setText("登录")
+                self._login_button = None
+                self._login_account_name = None
     
     def clear_log(self):
         """清空日志"""
         self.operation_log.clear()
         self.add_log("日志已清空")
+    
+    def update_account_info(self, account_name: str, username: str = None, status: str = None):
+        """更新账号信息（用户名、状态等）"""
+        try:
+            # 查找账号
+            account_updated = False
+            for account in self.accounts:
+                if account['name'] == account_name:
+                    # 更新用户名
+                    if username and username != account_name:
+                        account['username'] = username
+                        self.add_log(f"更新账号用户名: {account_name} → {username}")
+                    
+                    # 更新状态
+                    if status:
+                        account['status'] = status
+                        account['last_login'] = datetime.now().isoformat()
+                    
+                    account_updated = True
+                    break
+            
+            if account_updated:
+                # 保存更新
+                self.save_accounts()
+                # 刷新表格显示
+                self.update_table()
+                return True
+            else:
+                logger.warning(f"未找到账号: {account_name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"更新账号信息失败: {e}")
+            return False

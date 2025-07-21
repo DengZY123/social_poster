@@ -526,6 +526,58 @@ class MainWindow(QMainWindow):
             logger.error(f"编辑任务失败: {e}")
             QMessageBox.critical(self, "错误", f"编辑任务失败: {e}")
     
+    def _handle_test_error(self):
+        """处理账号测试错误（在主线程中）"""
+        if hasattr(self, '_test_error'):
+            error_msg = self._test_error
+            del self._test_error
+            self.log_widget.add_log(f"❌ 运行账号测试失败: {error_msg}")
+            self.account_tab.add_log(f"运行账号测试失败: {error_msg}")
+    
+    def _restore_login_button(self):
+        """恢复登录按钮状态（在主线程中）"""
+        if hasattr(self.account_tab, '_login_button') and self.account_tab._login_button:
+            try:
+                self.account_tab._login_button.setEnabled(True)
+                self.account_tab._login_button.setText("登录")
+                self.account_tab._login_button = None
+                logger.info("✅ 恢复登录按钮状态")
+            except Exception as e:
+                logger.error(f"恢复登录按钮失败: {e}")
+    
+    def _handle_test_result(self):
+        """处理账号测试结果（在主线程中）"""
+        if not hasattr(self, '_test_result'):
+            return
+            
+        success, status, account_name, username = self._test_result
+        del self._test_result  # 清理临时变量
+        
+        if success:
+            self.log_widget.add_log(f"✅ 账号测试完成")
+            self.account_tab.add_log(f"账号测试完成: {account_name}")
+            
+            # 如果获取到用户名，更新账号信息
+            if username and username != account_name:
+                self.account_tab.update_account_info(account_name, username=username, status=status)
+            else:
+                # 只更新状态
+                self.account_tab.update_account_info(account_name, status=status)
+        else:
+            self.log_widget.add_log(f"❌ 账号测试失败")
+            self.account_tab.add_log(f"账号测试失败: {account_name}")
+            self.account_tab.add_log(f"测试错误: {status}")
+            # 更新失败状态
+            self.account_tab.update_account_info(account_name, status=status)
+            
+        if status:
+            for line in status.strip().split('\n'):
+                if "测试结果:" in line:
+                    self.log_widget.add_log(line.strip())
+                    self.account_tab.add_log(line.strip())
+                elif line.strip() and not line.startswith("["):
+                    self.account_tab.add_log(line.strip())
+    
     def on_task_edited(self, task: PublishTask):
         """任务编辑完成"""
         try:
@@ -550,39 +602,72 @@ class MainWindow(QMainWindow):
 
     
 
+    @operation_guard("login_account", timeout_seconds=60, warning_message="正在登录中，请勿重复点击")
+    @safe_method(fallback_result=None, error_message="启动登录失败")
     def on_login_requested(self, account_name: str):
         """请求登录账号（测试账号）"""
         import threading  # 保证线程模块已导入
         try:
+            logger.info(f"🔑 on_login_requested 被调用: {account_name}")
             self.log_widget.add_log(f"🔑 正在测试账号 {account_name} 的登录状态...")
             def run_account_test():
                 try:
                     import asyncio
                     from core.account_tester import AccountTester
-                    tester = AccountTester(account_name, headless=False)
-                    success, status = asyncio.run(tester.test_account())
-                    if success:
-                        self.log_widget.add_log(f"✅ 账号测试完成")
-                        self.account_tab.add_log(f"账号测试完成: {account_name}")
-                    else:
-                        self.log_widget.add_log(f"❌ 账号测试失败")
-                        self.account_tab.add_log(f"账号测试失败: {account_name}")
-                        self.account_tab.add_log(f"测试错误: {status}")
-                    if status:
-                        for line in status.strip().split('\n'):
-                            if "测试结果:" in line:
-                                self.log_widget.add_log(line.strip())
-                                self.account_tab.add_log(line.strip())
-                            elif line.strip() and not line.startswith("["):
-                                self.account_tab.add_log(line.strip())
+                    logger.info(f"🧵 线程 {threading.current_thread().name} 开始运行账号测试")
+                    
+                    # 创建新的事件循环
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    try:
+                        tester = AccountTester(account_name, headless=False)
+                        success, status, username = loop.run_until_complete(tester.test_account())
+                        logger.info(f"✅ 账号测试完成: success={success}, status={status}, username={username}")
+                    except Exception as test_error:
+                        logger.error(f"❌ 账号测试异常: {test_error}")
+                        success = False
+                        status = f"测试异常: {test_error}"
+                        username = None
+                    finally:
+                        loop.close()
+                    # 保存结果到变量，稍后在主线程中使用
+                    self._test_result = (success, status, account_name, username)
+                    
+                    # 使用信号确保在主线程中更新GUI
+                    from PyQt6.QtCore import QTimer
+                    QTimer.singleShot(0, self._handle_test_result)
                 except Exception as e:
                     import traceback
                     logger.error(f"❌ 运行账号测试失败: {e}\n{traceback.format_exc()}")
-                    self.log_widget.add_log(f"❌ 运行账号测试失败: {e}")
-                    self.account_tab.add_log(f"运行账号测试失败: {e}")
+                    # 保存错误信息，在主线程中显示
+                    self._test_error = str(e)
+                    from PyQt6.QtCore import QTimer
+                    QTimer.singleShot(0, self._handle_test_error)
+                finally:
+                    # 确保按钮状态被恢复（在主线程中）
+                    from PyQt6.QtCore import QTimer
+                    QTimer.singleShot(100, self._restore_login_button)
             thread = threading.Thread(target=run_account_test, daemon=True)
+            logger.info(f"📋 创建线程: {thread.name} for {account_name}")
             thread.start()
+            logger.info(f"📋 线程已启动: {thread.name}")
             self.log_widget.add_log(f"📋 正在启动账号测试器，请稍候...")
+            
+            # 设置一个超时定时器，确保按钮状态能恢复
+            def check_thread_timeout():
+                if thread.is_alive():
+                    logger.warning("⚠️ 登录线程超时，强制恢复按钮状态")
+                    self.account_tab.add_log("登录超时，请重试")
+                    if hasattr(self.account_tab, '_login_button') and self.account_tab._login_button:
+                        try:
+                            self.account_tab._login_button.setEnabled(True)
+                            self.account_tab._login_button.setText("登录")
+                            self.account_tab._login_button = None
+                        except:
+                            pass
+            
+            QTimer.singleShot(60000, check_thread_timeout)  # 60秒超时
         except Exception as e:
             import traceback
             logger.error(f"启动账号测试失败: {e}\n{traceback.format_exc()}")
@@ -630,6 +715,7 @@ class MainWindow(QMainWindow):
         self.scheduler.task_completed.connect(self.on_task_completed)
         self.scheduler.task_failed.connect(self.on_task_failed)
         self.scheduler.scheduler_status.connect(self.on_scheduler_status)
+        self.scheduler.scheduler_message.connect(self.on_scheduler_message)
     
     def setup_refresh_timer(self):
         """设置刷新定时器"""
@@ -720,6 +806,11 @@ class MainWindow(QMainWindow):
         """调度器状态变化"""
         # 状态已经由控制面板处理
         pass
+    
+    @pyqtSlot(str)
+    def on_scheduler_message(self, message: str):
+        """处理调度器消息"""
+        self.log_widget.add_log(message)
     
     @safe_method(fallback_result=None, error_message="应用关闭处理失败")
     def closeEvent(self, event):

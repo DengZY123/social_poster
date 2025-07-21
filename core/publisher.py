@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from playwright.async_api import async_playwright, Page, BrowserContext
 import logging
+from loguru import logger as loguru_logger
+from .profile_manager import get_account_profile_dir, get_current_account_name
 
 # 配置日志
 logging.basicConfig(
@@ -29,25 +31,11 @@ class XhsPublisher:
     """小红书发布器"""
     
     def _get_profile_dir(self):
-        try:
-            # 尝试多种导入方式
-            try:
-                from packaging.scripts.path_detector import path_detector
-            except ImportError:
-                import sys
-                from pathlib import Path
-                # 手动添加路径
-                packaging_dir = Path(__file__).parent.parent / "packaging"
-                if packaging_dir.exists():
-                    sys.path.insert(0, str(packaging_dir))
-                    from scripts.path_detector import path_detector
-                else:
-                    raise ImportError("无法找到path_detector")
-            
-            return str(path_detector.get_user_data_dir())
-        except ImportError:
-            # 开发环境fallback
-            return "firefox_profile/main"
+        """获取profile目录 - 使用统一的profile管理"""
+        # 获取当前账号名称
+        account_name = get_current_account_name()
+        # 使用统一的profile目录
+        return get_account_profile_dir(account_name)
 
     def __init__(self, headless: bool = False, user_data_dir: str = None, executable_path: str = None):
         self.headless = headless
@@ -71,6 +59,7 @@ class XhsPublisher:
         """启动浏览器"""
         try:
             logger.info("🚀 启动浏览器...")
+            loguru_logger.info(f"📂 使用的profile目录: {self.user_data_dir}")
             
             # 直接启动持久化浏览器上下文（这样只会创建一个浏览器实例）
             self.playwright = await async_playwright().start()
@@ -167,8 +156,19 @@ class XhsPublisher:
                 else:
                     raise RuntimeError(f"浏览器启动失败：{error_msg}")
             
-            # 创建新页面
-            self.page = await self.context.new_page()
+            # launch_persistent_context 会自动创建一个页面
+            pages = self.context.pages
+            logger.info(f"📄 现有页面数: {len(pages)}")
+            
+            if pages:
+                # 使用已有的页面
+                self.page = pages[0]
+                logger.info("✅ 使用已有页面")
+            else:
+                # 如果没有页面，创建一个新的
+                logger.info("🔧 准备创建新页面...")
+                self.page = await self.context.new_page()
+                logger.info("✅ 创建新页面成功")
             
             # 设置用户代理
             await self.page.set_extra_http_headers({
@@ -204,45 +204,47 @@ class XhsPublisher:
         try:
             logger.info("[检测] 检查登录状态...")
             
-            # 使用你提供的登录链接来检测
-            login_test_url = "https://creator.xiaohongshu.com/login?source=&redirectReason=401&lastUrl=%2Fpublish%2Fpublish%3Ffrom%3Dtab_switch"
-            logger.info("🎯 访问登录检测链接...")
+            # 直接访问发布页面来检测登录状态（不要使用带401参数的URL）
+            publish_url = "https://creator.xiaohongshu.com/publish/publish?from=tab_switch"
+            logger.info("🎯 访问发布页面检测登录状态...")
             
-            await self.page.goto(login_test_url, wait_until="domcontentloaded", timeout=45000)
+            await self.page.goto(publish_url, wait_until="domcontentloaded", timeout=45000)
             
             # 等待可能的跳转
-            await asyncio.sleep(5)  # 等待几秒让页面完成跳转
+            await asyncio.sleep(3)  # 等待几秒让页面完成跳转
             
             # 获取最终URL
             final_url = self.page.url
-            logger.info(f"📍 最终跳转到的URL: {final_url}")
+            logger.info(f"📍 最终URL: {final_url}")
             
-            # 检查是否跳转到了发布页面（说明登录成功）
-            if "publish/publish" in final_url and "from=tab_switch" in final_url:
-                logger.info("🎉 检测到跳转至发布页面，用户已登录")
+            # 如果还在发布页面，说明已登录
+            if "publish/publish" in final_url and "login" not in final_url:
+                logger.info("✅ 保持在发布页面，用户已登录")
                 return True
             
-            # 检查是否仍在登录页面
+            # 如果被重定向到登录页面，说明未登录
             elif "login" in final_url:
-                logger.warning("❌ 仍在登录页面，用户未登录")
+                logger.warning("❌ 被重定向到登录页面，用户未登录")
                 return False
             
-            # 检查是否跳转到了其他创作者中心页面（也算登录成功）
+            # 如果在创作者中心的其他页面，也算登录成功
             elif final_url.startswith("https://creator.xiaohongshu.com") and "login" not in final_url:
-                logger.info("✅ 跳转到创作者中心页面，用户已登录")
+                logger.info("✅ 在创作者中心页面，用户已登录")
                 return True
             
-            # 其他情况，额外检查页面内容
+            # 其他情况，检查页面内容
             else:
-                logger.info(f"🤔 意外的URL跳转，检查页面内容: {final_url}")
+                logger.info(f"🤔 检查页面内容: {final_url}")
                 try:
                     page_text = await self.page.evaluate("document.body.innerText")
-                    if "登录" in page_text and ("发布" not in page_text and "创作" not in page_text):
-                        logger.warning("❌ 页面内容显示需要登录")
-                        return False
-                    elif "发布" in page_text or "创作" in page_text:
-                        logger.info("✅ 页面内容确认已登录（包含发布/创作功能）")
+                    # 如果页面包含发布相关内容，说明已登录
+                    if any(keyword in page_text for keyword in ["上传图文", "发布", "创作", "内容管理"]):
+                        logger.info("✅ 页面内容确认已登录")
                         return True
+                    # 如果页面要求登录，说明未登录
+                    elif any(keyword in page_text for keyword in ["请登录", "立即登录", "账号登录"]):
+                        logger.warning("❌ 页面要求登录")
+                        return False
                 except Exception as e:
                     logger.warning(f"⚠️ 页面内容检查失败: {e}")
                 
